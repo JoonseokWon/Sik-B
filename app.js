@@ -360,7 +360,7 @@ function renderContractDetail() {
       </div>
       <dl class="contract-grid">
         <div><dt>계약 지급률</dt><dd>${Number(member.rate || 0)}%</dd></div>
-        <div><dt>인기도 가정</dt><dd>${escapeHtml(contract.popularityTier)}</dd></div>
+        <div><dt>개인 활동 기여도</dt><dd>${escapeHtml(contract.popularityTier)}</dd></div>
         <div><dt>연습생 생활비</dt><dd>${escapeHtml(contract.traineeCost)}</dd></div>
         <div><dt>회사 투자</dt><dd>${escapeHtml(contract.companyInvestment)}</dd></div>
       </dl>
@@ -472,7 +472,7 @@ function seedData() {
       role: "멤버",
       rate: 9,
       revenueWeight: 0.8,
-      contract: createContract("중", "회사 부담", "높음", "회사 50%를 제외한 멤버 몫 50% 안에서 성장성과 회사 투자 부담을 반영해 9%를 배정합니다.", "공통 매출과 향후 개인 매출 모두 Lia 계약 지급률 9%를 적용합니다."),
+      contract: createContract("중", "회사 부담", "높음", "회사 50%를 제외한 멤버 몫 50% 안에서 현재 개인 활동 기여도와 회사 투자 부담을 반영해 9%를 배정합니다.", "공통 매출과 향후 개인 매출 모두 Lia 계약 지급률 9%를 적용합니다."),
     },
     {
       id: makeId(),
@@ -480,7 +480,7 @@ function seedData() {
       role: "멤버",
       rate: 7,
       revenueWeight: 0.6,
-      contract: createContract("성장", "회사 부담", "높음", "회사 50%를 제외한 멤버 몫 50% 안에서 신인 성장 구간과 회사 선투자 비중을 반영해 7%를 배정합니다.", "투자 회수 기간 종료 후 지급률 재협상 대상입니다."),
+      contract: createContract("하", "회사 부담", "높음", "회사 50%를 제외한 멤버 몫 50% 안에서 현재 개인 활동 기여도와 회사 선투자 비중을 반영해 7%를 배정합니다.", "투자 회수 기간 종료 후 지급률 재협상 대상입니다."),
     },
     {
       id: makeId(),
@@ -798,7 +798,7 @@ function workbookRows() {
     ...summary,
     ...sectionRows("매출 항목", ["날짜", "내역", "구분", "금액", "참여 멤버", "정산 대상 수"], revenueRows),
     ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출 풀", "공통 정산금", "개인 매출 원금", "개인 정산금", "계약 지급률", "계약 근거", "식비 건수", "공제 전", "식비 공제", "공제 후"], memberRows),
-    ...sectionRows("계약서 참조", ["멤버", "역할", "계약 지급률", "계약 유형", "인기도 가정", "연습생 생활비", "회사 투자", "지급률 근거", "특약"], contractRows),
+    ...sectionRows("계약서 참조", ["멤버", "역할", "계약 지급률", "계약 유형", "개인 활동 기여도", "연습생 생활비", "회사 투자", "지급률 근거", "특약"], contractRows),
     ...sectionRows("비용별 분배", ["날짜", "내역", "금액", "예상 식사인원", "정산 제외", "정산 대상", "1인 금액", "상태", "승인권자"], expenseRows),
     ...sectionRows("승인 필요 건", ["날짜", "내역", "금액", "1인 금액", "상태", "승인권자"], approvalRows),
     ...sectionRows("활동 기록", ["날짜", "멤버", "상태"], activityRows),
