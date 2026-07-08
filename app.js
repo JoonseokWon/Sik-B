@@ -248,6 +248,7 @@ function createExpense(date, title, amount) {
     excluded: defaultExcluded(participants),
     approver: "상위 매니저",
     approvalMemo: "",
+    recommendationNote: "더미 활동/일정 기준으로 생성됨",
   };
   expense.approvalStatus = defaultApprovalStatus(expense);
   return expense;
@@ -433,6 +434,7 @@ function syncExpenseRecommendation(expense) {
   expense.participants = participants;
   expense.excluded = defaultExcluded(participants);
   expense.approvalStatus = defaultApprovalStatus(expense);
+  expense.recommendationNote = `활동 기록/일정표 기준 ${participants.length}명 적용`;
   addAudit("예상 식사인원 적용", `${expense.date} ${expense.title}: ${previous || "없음"} -> ${participants.join(", ") || "예상 없음"}`);
 }
 
@@ -574,6 +576,7 @@ function normalizeState() {
     expense.excluded = Array.isArray(expense.excluded) ? expense.excluded : [];
     expense.approvalStatus = APPROVAL_STATES.includes(expense.approvalStatus) ? expense.approvalStatus : defaultApprovalStatus(expense);
     expense.approver = expense.approver || "상위 매니저";
+    expense.recommendationNote = expense.recommendationNote || "날짜 기준으로 다시 계산할 수 있습니다.";
   });
   state.attendance = Array.isArray(state.attendance) ? state.attendance : [];
   state.schedules = Array.isArray(state.schedules) ? state.schedules : [];
@@ -643,7 +646,13 @@ function renderExpenses() {
       <td><input type="date" value="${expense.date}" data-expense-field="date" data-id="${expense.id}" aria-label="날짜"></td>
       <td><input value="${escapeHtml(expense.title)}" data-expense-field="title" data-id="${expense.id}" aria-label="내역"></td>
       <td><input type="number" min="0" step="1000" value="${expense.amount}" data-expense-field="amount" data-id="${expense.id}" aria-label="금액"></td>
-      <td><input value="${escapeHtml(expense.participants.join(", "))}" data-expense-field="participants" data-id="${expense.id}" aria-label="예상 식사인원"></td>
+      <td>
+        <div class="input-action-cell">
+          <input value="${escapeHtml(expense.participants.join(", "))}" data-expense-field="participants" data-id="${expense.id}" aria-label="예상 식사인원">
+          <button class="small recommend-button" type="button" data-recommend-expense="${expense.id}" title="같은 날짜의 출퇴근 기록과 일정표를 기준으로 예상 식사인원을 다시 계산합니다.">불러오기</button>
+        </div>
+        <span class="cell-note">${escapeHtml(expense.recommendationNote)}</span>
+      </td>
       <td><input value="${escapeHtml(expense.excluded.join(", "))}" data-expense-field="excluded" data-id="${expense.id}" aria-label="정산 제외"></td>
       <td>정산 대상 균등 배분 (${billableCount}명)</td>
       <td class="money">${currency.format(share)}</td>
@@ -653,7 +662,6 @@ function renderExpenses() {
         </select>
       </td>
       <td><input value="${escapeHtml(expense.approver)}" data-expense-field="approver" data-id="${expense.id}" aria-label="승인권자"></td>
-      <td><button class="small recommend-button" type="button" data-recommend-expense="${expense.id}" title="같은 날짜의 출퇴근 기록과 일정표를 기준으로 예상 식사인원을 채웁니다.">예상 식사인원</button></td>
       <td><button class="remove" type="button" data-remove-expense="${expense.id}" aria-label="비용 삭제">x</button></td>
     `;
     els.expenseRows.appendChild(tr);
@@ -965,6 +973,8 @@ document.addEventListener("change", (event) => {
     if (["amount", "participants", "excluded", "date"].includes(target.dataset.expenseField) && target.dataset.expenseField !== "approvalStatus") {
       expense.approvalStatus = defaultApprovalStatus(expense);
     }
+    if (target.dataset.expenseField === "date") expense.recommendationNote = "날짜가 바뀌었습니다. 불러오기를 누르면 다시 계산됩니다.";
+    if (target.dataset.expenseField === "participants") expense.recommendationNote = "직접 수정됨";
     addAudit("비용 건 수정", `${expense.title} ${target.dataset.expenseField}: ${previous} -> ${expense[target.dataset.expenseField]}`);
     render();
   }

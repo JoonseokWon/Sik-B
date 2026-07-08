@@ -194,7 +194,7 @@ textarea {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 1480px;
+  min-width: 1380px;
 }
 
 .attendance-table {
@@ -237,7 +237,22 @@ td select {
 }
 
 .recommend-button {
-  min-width: 118px;
+  min-width: 74px;
+}
+
+.input-action-cell {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.cell-note {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .contract-button {
