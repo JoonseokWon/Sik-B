@@ -4,7 +4,7 @@ const currency = new Intl.NumberFormat("ko-KR", {
   maximumFractionDigits: 0,
 });
 
-const DATA_VERSION = 10;
+const DATA_VERSION = 11;
 const ROLES = ["멤버", "매니저", "스태프", "게스트"];
 const EXCLUDED_ROLES = new Set(["매니저", "스태프", "게스트"]);
 const REVENUE_TYPES = ["공통 매출", "개인 매출"];
@@ -17,6 +17,7 @@ const state = {
   periodStart: "2026-07-01",
   periodEnd: "2026-07-15",
   approvalLimit: 30000,
+  companyRate: 50,
   members: [],
   revenueItems: [],
   expenses: [],
@@ -31,6 +32,7 @@ const els = {
   periodStart: document.querySelector("#periodStart"),
   periodEnd: document.querySelector("#periodEnd"),
   approvalLimit: document.querySelector("#approvalLimit"),
+  companyRate: document.querySelector("#companyRate"),
   memberRows: document.querySelector("#memberRows"),
   revenueRows: document.querySelector("#revenueRows"),
   expenseRows: document.querySelector("#expenseRows"),
@@ -41,6 +43,8 @@ const els = {
   csvInput: document.querySelector("#csvInput"),
   totalRevenue: document.querySelector("#totalRevenue"),
   totalCommonRevenue: document.querySelector("#totalCommonRevenue"),
+  companyShare: document.querySelector("#companyShare"),
+  rateTotal: document.querySelector("#rateTotal"),
   totalGross: document.querySelector("#totalGross"),
   totalFood: document.querySelector("#totalFood"),
   approvalCount: document.querySelector("#approvalCount"),
@@ -286,18 +290,45 @@ function revenueShare(item, memberName) {
   return Number(item.amount || 0);
 }
 
+function totalRevenueInPeriod() {
+  return state.revenueItems
+    .filter((item) => inPeriod(item.date))
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+}
+
+function commonRevenuePool() {
+  return state.revenueItems
+    .filter((item) => inPeriod(item.date) && item.type === "공통 매출")
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+}
+
+function memberRateTotal() {
+  return state.members
+    .filter((member) => !EXCLUDED_ROLES.has(member.role))
+    .reduce((sum, member) => sum + Number(member.rate || 0), 0);
+}
+
+function contractRateTotal() {
+  return Number(state.companyRate || 0) + memberRateTotal();
+}
+
+function companyShareAmount() {
+  return Math.round(totalRevenueInPeriod() * (Number(state.companyRate || 0) / 100));
+}
+
 function revenueBreakdown(member) {
-  if (EXCLUDED_ROLES.has(member.role)) return { common: 0, individual: 0, total: 0, commonPayout: 0 };
+  if (EXCLUDED_ROLES.has(member.role)) return { common: 0, individual: 0, total: 0, commonPayout: 0, individualPayout: 0 };
   return state.revenueItems.reduce(
     (acc, item) => {
       const share = revenueShare(item, member.name);
       if (item.type === "개인 매출") acc.individual += share;
       else acc.common += share;
       acc.commonPayout = Math.round(acc.common * (Number(member.rate || 0) / 100));
-      acc.total = acc.commonPayout + acc.individual;
+      acc.individualPayout = Math.round(acc.individual * (Number(member.rate || 0) / 100));
+      acc.total = acc.commonPayout + acc.individualPayout;
       return acc;
     },
-    { common: 0, individual: 0, total: 0, commonPayout: 0 },
+    { common: 0, individual: 0, total: 0, commonPayout: 0, individualPayout: 0 },
   );
 }
 
@@ -400,6 +431,7 @@ function syncInputs() {
   els.periodStart.value = state.periodStart;
   els.periodEnd.value = state.periodEnd;
   els.approvalLimit.value = state.approvalLimit;
+  els.companyRate.value = state.companyRate;
 }
 
 function seedData() {
@@ -408,46 +440,47 @@ function seedData() {
   state.periodStart = "2026-07-01";
   state.periodEnd = "2026-07-15";
   state.approvalLimit = 30000;
+  state.companyRate = 50;
   state.members = [
     {
       id: makeId(),
       name: "Haru",
       role: "멤버",
-      rate: 58,
+      rate: 13,
       revenueWeight: 1.3,
-      contract: createContract("상", "본인 부담", "낮음", "개인 팬덤과 예능 수요가 가장 높고 연습생 생활비 일부를 본인이 부담해 계약 지급률을 우대합니다.", "개인 활동 매출은 Haru 귀속 매출로 우선 인식합니다."),
+      contract: createContract("상", "본인 부담", "낮음", "회사 50%를 제외한 멤버 몫 50% 안에서 개인 팬덤과 예능 수요가 가장 높아 13%를 배정합니다.", "공통 매출과 개인 활동 매출 모두 Haru 계약 지급률 13%를 적용합니다."),
     },
     {
       id: makeId(),
       name: "Min",
       role: "멤버",
-      rate: 54,
+      rate: 11,
       revenueWeight: 1.2,
-      contract: createContract("상", "본인 일부 부담", "중간", "라디오와 방송 고정 수요가 있고 초기 비용 일부를 부담해 평균보다 높은 지급률을 적용합니다.", "개인 DJ/방송 매출은 Min 귀속 매출로 분리합니다."),
+      contract: createContract("상", "본인 일부 부담", "중간", "회사 50%를 제외한 멤버 몫 50% 안에서 라디오와 방송 고정 수요를 반영해 11%를 배정합니다.", "공통 매출과 개인 DJ/방송 매출 모두 Min 계약 지급률 11%를 적용합니다."),
     },
     {
       id: makeId(),
       name: "Seo",
       role: "멤버",
-      rate: 48,
+      rate: 10,
       revenueWeight: 1.1,
-      contract: createContract("중상", "회사 부담", "높음", "개인 연기 매출은 있으나 회사가 트레이닝과 프로모션 비용을 크게 부담해 지급률을 중간 수준으로 둡니다.", "연기/카메오 매출은 Seo 귀속 매출로 분리하되 회사 투자 회수 조건을 반영합니다."),
+      contract: createContract("중상", "회사 부담", "높음", "회사 50%를 제외한 멤버 몫 50% 안에서 연기 활동성과 회사 투자 회수 조건을 함께 반영해 10%를 배정합니다.", "공통 매출과 연기/카메오 매출 모두 Seo 계약 지급률 10%를 적용합니다."),
     },
     {
       id: makeId(),
       name: "Lia",
       role: "멤버",
-      rate: 38,
+      rate: 9,
       revenueWeight: 0.8,
-      contract: createContract("중", "회사 부담", "높음", "개인 매출이 아직 적고 회사 트레이닝/콘텐츠 투자 비중이 높아 보수적인 지급률을 적용합니다.", "공통 매출은 참여 멤버 기준으로 귀속하고 개인 매출은 발생 시 별도 반영합니다."),
+      contract: createContract("중", "회사 부담", "높음", "회사 50%를 제외한 멤버 몫 50% 안에서 성장성과 회사 투자 부담을 반영해 9%를 배정합니다.", "공통 매출과 향후 개인 매출 모두 Lia 계약 지급률 9%를 적용합니다."),
     },
     {
       id: makeId(),
       name: "Noa",
       role: "멤버",
-      rate: 34,
+      rate: 7,
       revenueWeight: 0.6,
-      contract: createContract("성장", "회사 부담", "높음", "신인 성장 구간으로 회사 선투자와 생활비 지원 비중이 높아 가장 낮은 지급률을 가정합니다.", "투자 회수 기간 종료 후 지급률 재협상 대상입니다."),
+      contract: createContract("성장", "회사 부담", "높음", "회사 50%를 제외한 멤버 몫 50% 안에서 신인 성장 구간과 회사 선투자 비중을 반영해 7%를 배정합니다.", "투자 회수 기간 종료 후 지급률 재협상 대상입니다."),
     },
     {
       id: makeId(),
@@ -494,6 +527,7 @@ function seedData() {
 function normalizeState() {
   state.version = DATA_VERSION;
   state.approvalLimit = Number(state.approvalLimit || 30000);
+  state.companyRate = Number(state.companyRate ?? 50);
   state.members = Array.isArray(state.members) ? state.members : [];
   state.members.forEach((member) => {
     member.role = ROLES.includes(member.role) ? member.role : "멤버";
@@ -535,7 +569,7 @@ function renderMembers() {
       </td>
       <td class="money">${currency.format(calc.revenue.common)}</td>
       <td class="money">${currency.format(calc.revenue.commonPayout)}</td>
-      <td class="money">${currency.format(calc.revenue.individual)}</td>
+      <td class="money">${currency.format(calc.revenue.individualPayout)}</td>
       <td><input type="number" min="0" max="100" step="0.1" value="${member.rate}" data-field="rate" data-id="${member.id}" aria-label="계약 지급률"></td>
       <td><button class="small ghost contract-button" type="button" data-show-contract="${member.id}" title="${escapeHtml(contractLine(member))}">계약 보기</button></td>
       <td>${calc.mealCount}건</td>
@@ -674,11 +708,13 @@ function renderTotals() {
     },
     { revenue: 0, gross: 0, food: 0 },
   );
-  const commonRevenue = state.revenueItems
-    .filter((item) => inPeriod(item.date) && item.type === "공통 매출")
-    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const commonRevenue = commonRevenuePool();
+  const rateTotal = contractRateTotal();
   const approvalCount = state.expenses.filter((expense) => inPeriod(expense.date) && ["승인 대기", "보류"].includes(expenseStatus(expense))).length;
   els.totalCommonRevenue.textContent = currency.format(commonRevenue);
+  els.companyShare.textContent = currency.format(companyShareAmount());
+  els.rateTotal.textContent = `${rateTotal}%`;
+  els.rateTotal.parentElement?.classList.toggle("warning-card", rateTotal !== 100);
   els.totalRevenue.textContent = currency.format(totals.revenue);
   els.totalGross.textContent = currency.format(totals.gross);
   els.totalFood.textContent = currency.format(totals.food);
@@ -704,6 +740,7 @@ function updateSettings() {
   state.periodStart = els.periodStart.value;
   state.periodEnd = els.periodEnd.value;
   state.approvalLimit = Number(els.approvalLimit.value || 0);
+  state.companyRate = Number(els.companyRate.value || 0);
   render();
 }
 
@@ -717,7 +754,9 @@ function workbookRows() {
     [{ value: "그룹명", style: 2 }, { value: state.groupName }],
     [{ value: "정산 기간", style: 2 }, { value: `${state.periodStart} ~ ${state.periodEnd}` }],
     [{ value: "1인 승인 기준", style: 2 }, { value: state.approvalLimit, style: 4 }],
-    [{ value: "공통 매출 풀", style: 2 }, { value: state.revenueItems.filter((item) => inPeriod(item.date) && item.type === "공통 매출").reduce((sum, item) => sum + Number(item.amount || 0), 0), style: 4 }],
+    [{ value: "공통 매출 풀", style: 2 }, { value: commonRevenuePool(), style: 4 }],
+    [{ value: "회사 몫", style: 2 }, { value: companyShareAmount(), style: 4 }],
+    [{ value: "지급률 합계", style: 2 }, { value: contractRateTotal(), style: 4 }],
     [],
   ];
   const revenueRows = state.revenueItems.map((item) => [
@@ -728,7 +767,7 @@ function workbookRows() {
     const calc = calculateMember(member);
     return [
       { value: member.name }, { value: member.role }, { value: calc.revenue.common, style: 4 }, { value: calc.revenue.commonPayout, style: 4 },
-      { value: calc.revenue.individual, style: 4 }, { value: member.rate, style: 4 }, { value: contractLine(member) }, { value: calc.mealCount, style: 4 },
+      { value: calc.revenue.individual, style: 4 }, { value: calc.revenue.individualPayout, style: 4 }, { value: member.rate, style: 4 }, { value: contractLine(member) }, { value: calc.mealCount, style: 4 },
       { value: calc.gross, style: 4 }, { value: calc.food, style: 4 }, { value: calc.net, style: 4 },
     ];
   });
@@ -758,7 +797,7 @@ function workbookRows() {
   return [
     ...summary,
     ...sectionRows("매출 항목", ["날짜", "내역", "구분", "금액", "참여 멤버", "정산 대상 수"], revenueRows),
-    ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출 풀", "공통 정산금", "개인 매출", "계약 지급률", "계약 근거", "식비 건수", "공제 전", "식비 공제", "공제 후"], memberRows),
+    ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출 풀", "공통 정산금", "개인 매출 원금", "개인 정산금", "계약 지급률", "계약 근거", "식비 건수", "공제 전", "식비 공제", "공제 후"], memberRows),
     ...sectionRows("계약서 참조", ["멤버", "역할", "계약 지급률", "계약 유형", "인기도 가정", "연습생 생활비", "회사 투자", "지급률 근거", "특약"], contractRows),
     ...sectionRows("비용별 분배", ["날짜", "내역", "금액", "예상 식사인원", "정산 제외", "정산 대상", "1인 금액", "상태", "승인권자"], expenseRows),
     ...sectionRows("승인 필요 건", ["날짜", "내역", "금액", "1인 금액", "상태", "승인권자"], approvalRows),

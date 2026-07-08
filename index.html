@@ -26,6 +26,14 @@
           <strong id="totalCommonRevenue">0원</strong>
         </article>
         <article>
+          <span>회사 몫</span>
+          <strong id="companyShare">0원</strong>
+        </article>
+        <article>
+          <span>지급률 합계</span>
+          <strong id="rateTotal">0%</strong>
+        </article>
+        <article>
           <span>공제 전 정산 합계</span>
           <strong id="totalRevenue">0원</strong>
         </article>
@@ -62,8 +70,12 @@
             1인 식사 승인 기준
             <input id="approvalLimit" type="number" min="0" step="1000" value="30000">
           </label>
+          <label>
+            회사 지급률
+            <input id="companyRate" type="number" min="0" max="100" step="0.1" value="50">
+          </label>
           <div class="note">
-            출퇴근 기록과 일정표를 기준으로 예상 식사인원을 산출하고, 매니저/스태프/게스트는 정산 제외로 자동 분류합니다.
+            회사 지급률과 멤버별 계약 지급률의 합계가 100%가 되도록 관리합니다. 출퇴근 기록과 일정표를 기준으로 예상 식사인원을 산출합니다.
           </div>
         </aside>
 
@@ -71,7 +83,7 @@
           <div class="panel-header">
             <div>
               <h2>멤버별 정산</h2>
-              <p>공통 매출 풀에 각 멤버의 계약 지급률을 곱해 공통 정산금을 계산하고, 개인 매출은 해당 멤버에게 더합니다. 계약 조건은 계약서 참조에서 확인합니다.</p>
+              <p>회사 몫을 포함한 지급률 합계가 100%가 되도록 두고, 공통/개인 매출에 각 멤버의 계약 지급률을 적용합니다. 계약 조건은 계약서 참조에서 확인합니다.</p>
             </div>
             <button id="addMemberButton" type="button" class="small">멤버 추가</button>
           </div>
@@ -83,7 +95,7 @@
                   <th>역할</th>
                   <th>공통 매출 풀</th>
                   <th>공통 정산금</th>
-                  <th>개인 매출</th>
+                  <th>개인 정산금</th>
                   <th>계약 지급률</th>
                   <th>계약 근거</th>
                   <th>식비 건수</th>
