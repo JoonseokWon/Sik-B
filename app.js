@@ -424,7 +424,7 @@ function renderMembers() {
       <td class="money">${currency.format(calc.revenue.common)}</td>
       <td class="money">${currency.format(calc.revenue.individual)}</td>
       <td class="money">${currency.format(calc.revenue.total)}</td>
-      <td><input type="number" min="0" max="100" step="0.1" value="${member.rate}" data-field="rate" data-id="${member.id}" aria-label="정산율"></td>
+      <td><input type="number" min="0" max="100" step="0.1" value="${member.rate}" data-field="rate" data-id="${member.id}" aria-label="계약 지급률"></td>
       <td>${calc.mealCount}건</td>
       <td class="money">${currency.format(calc.gross)}</td>
       <td class="money deduction">-${currency.format(calc.food)}</td>
@@ -631,7 +631,7 @@ function workbookRows() {
   return [
     ...summary,
     ...sectionRows("매출 항목", ["날짜", "내역", "구분", "금액", "참여 멤버", "정산 대상 수"], revenueRows),
-    ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출", "개인 매출", "총 매출", "정산율", "식비 건수", "공제 전", "식비 공제", "공제 후"], memberRows),
+    ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출", "개인 매출", "총 매출", "계약 지급률", "식비 건수", "공제 전", "식비 공제", "공제 후"], memberRows),
     ...sectionRows("비용별 분배", ["날짜", "내역", "금액", "예상 식사인원", "정산 제외", "정산 대상", "1인 금액", "상태", "승인권자"], expenseRows),
     ...sectionRows("승인 필요 건", ["날짜", "내역", "금액", "1인 금액", "상태", "승인권자"], approvalRows),
     ...sectionRows("활동 기록", ["날짜", "멤버", "상태"], activityRows),
