@@ -55,6 +55,18 @@ button.small {
   font-size: 13px;
 }
 
+.file-button {
+  min-height: 38px;
+  border-radius: 7px;
+  padding: 9px 14px;
+  background: #e9eef1;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 button.remove {
   width: 32px;
   height: 32px;
@@ -533,6 +545,21 @@ td select {
 .integration-panel p {
   margin-bottom: 0;
   color: var(--muted);
+}
+
+.integration-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+#externalExcelInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .integration-grid {

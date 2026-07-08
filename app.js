@@ -4,7 +4,7 @@ const currency = new Intl.NumberFormat("ko-KR", {
   maximumFractionDigits: 0,
 });
 
-const DATA_VERSION = 12;
+const DATA_VERSION = 13;
 const ROLES = ["멤버", "매니저", "스태프", "게스트"];
 const EXCLUDED_ROLES = new Set(["매니저", "스태프", "게스트"]);
 const REVENUE_TYPES = ["공통 매출", "개인 매출"];
@@ -50,6 +50,7 @@ const els = {
   auditList: document.querySelector("#auditList"),
   contractDetail: document.querySelector("#contractDetail"),
   syncExternalButton: document.querySelector("#syncExternalButton"),
+  externalExcelInput: document.querySelector("#externalExcelInput"),
   totalRevenue: document.querySelector("#totalRevenue"),
   totalCommonRevenue: document.querySelector("#totalCommonRevenue"),
   companyShare: document.querySelector("#companyShare"),
@@ -203,6 +204,101 @@ function makeZip(files) {
   ]);
 
   return concatBytes([...localParts, centralDirectory, endRecord]);
+}
+
+function readU16(data, offset) {
+  return data[offset] | (data[offset + 1] << 8);
+}
+
+function readU32(data, offset) {
+  return (data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24)) >>> 0;
+}
+
+async function inflateRaw(bytes) {
+  if (!("DecompressionStream" in window)) throw new Error("현재 브라우저는 XLSX 압축 해제를 지원하지 않습니다.");
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function unzipWorkbook(buffer) {
+  const data = new Uint8Array(buffer);
+  let eocd = -1;
+  for (let offset = data.length - 22; offset >= 0; offset -= 1) {
+    if (readU32(data, offset) === 0x06054b50) {
+      eocd = offset;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error("엑셀 파일 구조를 찾을 수 없습니다.");
+  const fileCount = readU16(data, eocd + 10);
+  let cursor = readU32(data, eocd + 16);
+  const files = new Map();
+  const decoder = new TextDecoder("utf-8");
+  for (let index = 0; index < fileCount; index += 1) {
+    if (readU32(data, cursor) !== 0x02014b50) throw new Error("엑셀 중앙 디렉터리를 읽을 수 없습니다.");
+    const method = readU16(data, cursor + 10);
+    const compressedSize = readU32(data, cursor + 20);
+    const nameLength = readU16(data, cursor + 28);
+    const extraLength = readU16(data, cursor + 30);
+    const commentLength = readU16(data, cursor + 32);
+    const localOffset = readU32(data, cursor + 42);
+    const name = decoder.decode(data.slice(cursor + 46, cursor + 46 + nameLength));
+    const localNameLength = readU16(data, localOffset + 26);
+    const localExtraLength = readU16(data, localOffset + 28);
+    const start = localOffset + 30 + localNameLength + localExtraLength;
+    const compressed = data.slice(start, start + compressedSize);
+    const content = method === 0 ? compressed : await inflateRaw(compressed);
+    files.set(name, decoder.decode(content));
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+  return files;
+}
+
+function excelSerialDate(value) {
+  const serial = Number(value);
+  if (!Number.isFinite(serial)) return String(value || "");
+  const utc = Math.round((serial - 25569) * 86400 * 1000);
+  return new Date(utc).toISOString().slice(0, 10);
+}
+
+function xlsxCellValue(cell, sharedStrings) {
+  const type = cell.getAttribute("t");
+  if (type === "inlineStr") return cell.querySelector("is t")?.textContent || "";
+  const raw = cell.querySelector("v")?.textContent || "";
+  if (type === "s") return sharedStrings[Number(raw)] || "";
+  return raw;
+}
+
+function xlsxColumnIndex(ref) {
+  const letters = String(ref || "").replace(/\d/g, "");
+  return [...letters].reduce((sum, letter) => sum * 26 + letter.charCodeAt(0) - 64, 0) - 1;
+}
+
+async function readActivityWorkbook(file) {
+  const xmlFiles = await unzipWorkbook(await file.arrayBuffer());
+  const parser = new DOMParser();
+  const sharedDoc = parser.parseFromString(xmlFiles.get("xl/sharedStrings.xml") || "<sst/>", "application/xml");
+  const sharedStrings = [...sharedDoc.querySelectorAll("si")].map((node) => [...node.querySelectorAll("t")].map((text) => text.textContent).join(""));
+  const sheetXml = xmlFiles.get("xl/worksheets/sheet1.xml");
+  if (!sheetXml) throw new Error("첫 번째 시트를 찾을 수 없습니다.");
+  const sheetDoc = parser.parseFromString(sheetXml, "application/xml");
+  const rows = [...sheetDoc.querySelectorAll("sheetData row")].map((row) => {
+    const values = [];
+    [...row.querySelectorAll("c")].forEach((cell) => {
+      values[xlsxColumnIndex(cell.getAttribute("r"))] = xlsxCellValue(cell, sharedStrings);
+    });
+    return values.map((value) => String(value || "").trim());
+  }).filter((row) => row.some(Boolean));
+  const headers = (rows.shift() || []).map((header) => header.replace(/\s/g, ""));
+  const dateIndex = headers.findIndex((header) => header === "날짜" || header.toLowerCase() === "date");
+  const memberIndex = headers.findIndex((header) => header === "멤버" || header.toLowerCase() === "member");
+  const statusIndex = headers.findIndex((header) => header === "상태" || header.toLowerCase() === "status");
+  if (dateIndex < 0 || memberIndex < 0) throw new Error("활동 기록 시트에는 날짜, 멤버 컬럼이 필요합니다.");
+  return rows.map((row) => ({
+    date: /^\d+(\.\d+)?$/.test(row[dateIndex]) ? excelSerialDate(row[dateIndex]) : row[dateIndex],
+    member: row[memberIndex],
+    status: row[statusIndex] || "출근",
+  })).filter((row) => row.date && row.member);
 }
 
 function columnName(index) {
@@ -591,6 +687,24 @@ function syncExternalSources() {
   state.schedules.push(...schedules.map((row) => ({ id: makeId(), ...row })));
   state.expenses.forEach(syncExpenseRecommendation);
   addAudit("외부 데이터 동기화", "회사 입출 기록, 그룹 캘린더, 결제 내역 더미 커넥터로 활동 기록과 예상 식사인원을 갱신했습니다.");
+}
+
+async function importActivityWorkbook(file) {
+  if (!file) return;
+  try {
+    const rows = await readActivityWorkbook(file);
+    if (!rows.length) throw new Error("가져올 활동 기록이 없습니다.");
+    const dates = new Set(rows.map((row) => row.date));
+    state.attendance = state.attendance.filter((row) => !dates.has(row.date));
+    state.attendance.push(...rows.map((row) => ({ id: makeId(), ...row })));
+    state.expenses.forEach(syncExpenseRecommendation);
+    addAudit("외부 엑셀 가져오기", `${file.name}에서 활동 기록 ${rows.length}건을 가져와 예상 식사인원을 다시 계산했습니다.`);
+    render();
+  } catch (error) {
+    addAudit("외부 엑셀 가져오기 실패", error.message || "알 수 없는 오류가 발생했습니다.");
+    alert(`엑셀 가져오기에 실패했습니다.\n${error.message || "파일 형식을 확인해 주세요."}`);
+    render();
+  }
 }
 
 function normalizeState() {
@@ -1118,6 +1232,15 @@ document.addEventListener("change", (event) => {
     row[target.dataset.scheduleField] = target.dataset.scheduleField === "members" ? splitNames(target.value) : target.value;
     addAudit("일정표 수정", `${row.title} ${target.dataset.scheduleField}: ${previous} -> ${row[target.dataset.scheduleField]}`);
     render();
+  }
+  if (target === els.externalExcelInput) {
+    if (!ensureEditPermission("외부 엑셀 가져오기")) {
+      target.value = "";
+      return;
+    }
+    importActivityWorkbook(target.files?.[0]).finally(() => {
+      target.value = "";
+    });
   }
 });
 
