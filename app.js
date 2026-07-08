@@ -655,21 +655,30 @@ function renderRevenue() {
   state.revenueItems.forEach((item) => {
     const count = settlementMembers(item.participants).length;
     const mode = item.type === "개인 매출" ? "개인 귀속" : `공통 매출 풀 (${count}명 참여)`;
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td><input type="date" value="${item.date}" data-revenue-field="date" data-id="${item.id}" aria-label="매출 날짜"></td>
-      <td><input value="${escapeHtml(item.title)}" data-revenue-field="title" data-id="${item.id}" aria-label="매출 내역"></td>
-      <td>
-        <select data-revenue-field="type" data-id="${item.id}" aria-label="매출 구분">
+    const card = document.createElement("article");
+    card.className = "compact-card";
+    card.innerHTML = `
+      <div class="compact-summary">
+        <div>
+          <span class="compact-date">${escapeHtml(item.date)}</span>
+          <strong>${escapeHtml(item.title)}</strong>
+          <span class="compact-sub">${escapeHtml(item.type)} · ${escapeHtml(mode)}</span>
+        </div>
+        <div class="compact-money">${currency.format(item.amount)}</div>
+        <div class="compact-people">${escapeHtml(item.participants.join(", "))}</div>
+        <button class="remove" type="button" data-remove-revenue="${item.id}" aria-label="매출 삭제">x</button>
+      </div>
+      <div class="compact-edit revenue-edit">
+        <label>날짜<input type="date" value="${item.date}" data-revenue-field="date" data-id="${item.id}" aria-label="매출 날짜"></label>
+        <label>내역<input value="${escapeHtml(item.title)}" data-revenue-field="title" data-id="${item.id}" aria-label="매출 내역"></label>
+        <label>구분<select data-revenue-field="type" data-id="${item.id}" aria-label="매출 구분">
           ${REVENUE_TYPES.map((type) => `<option value="${type}" ${item.type === type ? "selected" : ""}>${type}</option>`).join("")}
-        </select>
-      </td>
-      <td><input type="number" min="0" step="10000" value="${item.amount}" data-revenue-field="amount" data-id="${item.id}" aria-label="매출 금액"></td>
-      <td><input value="${escapeHtml(item.participants.join(", "))}" data-revenue-field="participants" data-id="${item.id}" aria-label="매출 참여 멤버"></td>
-      <td>${mode}</td>
-      <td><button class="remove" type="button" data-remove-revenue="${item.id}" aria-label="매출 삭제">x</button></td>
+        </select></label>
+        <label>금액<input type="number" min="0" step="10000" value="${item.amount}" data-revenue-field="amount" data-id="${item.id}" aria-label="매출 금액"></label>
+        <label class="wide-field">참여/귀속 멤버<input value="${escapeHtml(item.participants.join(", "))}" data-revenue-field="participants" data-id="${item.id}" aria-label="매출 참여 멤버"></label>
+      </div>
     `;
-    els.revenueRows.appendChild(tr);
+    els.revenueRows.appendChild(card);
   });
 }
 
@@ -680,31 +689,38 @@ function renderExpenses() {
     const needsApproval = expenseNeedsApproval(expense);
     const status = expenseStatus(expense);
     const billableCount = billableParticipants(expense).length;
-    const tr = document.createElement("tr");
-    tr.className = needsApproval && status !== "승인 완료" ? "approval-row" : "";
-    tr.innerHTML = `
-      <td><input type="date" value="${expense.date}" data-expense-field="date" data-id="${expense.id}" aria-label="날짜"></td>
-      <td><input value="${escapeHtml(expense.title)}" data-expense-field="title" data-id="${expense.id}" aria-label="내역"></td>
-      <td><input type="number" min="0" step="1000" value="${expense.amount}" data-expense-field="amount" data-id="${expense.id}" aria-label="금액"></td>
-      <td>
+    const card = document.createElement("article");
+    card.className = `compact-card ${needsApproval && status !== "승인 완료" ? "approval-card" : ""}`;
+    card.innerHTML = `
+      <div class="compact-summary">
+        <div>
+          <span class="compact-date">${escapeHtml(expense.date)}</span>
+          <strong>${escapeHtml(expense.title)}</strong>
+          <span class="compact-sub">예상 ${billableCount}명 · ${escapeHtml(expenseStatus(expense))} · ${escapeHtml(expense.recommendationNote)}</span>
+        </div>
+        <div class="compact-money">${currency.format(expense.amount)}</div>
+        <div class="compact-money">1인 ${currency.format(share)}</div>
+        <button class="remove" type="button" data-remove-expense="${expense.id}" aria-label="비용 삭제">x</button>
+      </div>
+      <div class="compact-edit expense-edit">
+        <label>날짜<input type="date" value="${expense.date}" data-expense-field="date" data-id="${expense.id}" aria-label="날짜"></label>
+        <label>내역<input value="${escapeHtml(expense.title)}" data-expense-field="title" data-id="${expense.id}" aria-label="내역"></label>
+        <label>금액<input type="number" min="0" step="1000" value="${expense.amount}" data-expense-field="amount" data-id="${expense.id}" aria-label="금액"></label>
+        <label class="wide-field">예상 식사인원
         <div class="input-action-cell">
           <input value="${escapeHtml(expense.participants.join(", "))}" data-expense-field="participants" data-id="${expense.id}" aria-label="예상 식사인원">
           <button class="small recommend-button" type="button" data-recommend-expense="${expense.id}" title="같은 날짜의 출퇴근 기록과 일정표를 기준으로 예상 식사인원을 다시 계산합니다.">불러오기</button>
         </div>
-        <span class="cell-note">${escapeHtml(expense.recommendationNote)}</span>
-      </td>
-      <td><input value="${escapeHtml(expense.excluded.join(", "))}" data-expense-field="excluded" data-id="${expense.id}" aria-label="정산 제외"></td>
-      <td>정산 대상 균등 배분 (${billableCount}명)</td>
-      <td class="money">${currency.format(share)}</td>
-      <td>
-        <select data-expense-field="approvalStatus" data-id="${expense.id}" aria-label="승인 상태">
+        <span class="cell-note">${escapeHtml(expense.recommendationNote)}</span></label>
+        <label>정산 제외<input value="${escapeHtml(expense.excluded.join(", "))}" data-expense-field="excluded" data-id="${expense.id}" aria-label="정산 제외"></label>
+        <label>승인 상태<select data-expense-field="approvalStatus" data-id="${expense.id}" aria-label="승인 상태">
           ${APPROVAL_STATES.map((item) => `<option value="${item}" ${status === item ? "selected" : ""}>${item}</option>`).join("")}
-        </select>
-      </td>
-      <td><input value="${escapeHtml(expense.approver)}" data-expense-field="approver" data-id="${expense.id}" aria-label="승인권자"></td>
-      <td><button class="remove" type="button" data-remove-expense="${expense.id}" aria-label="비용 삭제">x</button></td>
+        </select></label>
+        <label>승인권자<input value="${escapeHtml(expense.approver)}" data-expense-field="approver" data-id="${expense.id}" aria-label="승인권자"></label>
+        <div class="compact-formula">배분 방식: 정산 대상 균등 배분 (${billableCount}명)</div>
+      </div>
     `;
-    els.expenseRows.appendChild(tr);
+    els.expenseRows.appendChild(card);
   });
 }
 
