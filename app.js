@@ -4,7 +4,7 @@ const currency = new Intl.NumberFormat("ko-KR", {
   maximumFractionDigits: 0,
 });
 
-const DATA_VERSION = 9;
+const DATA_VERSION = 10;
 const ROLES = ["멤버", "매니저", "스태프", "게스트"];
 const EXCLUDED_ROLES = new Set(["매니저", "스태프", "게스트"]);
 const REVENUE_TYPES = ["공통 매출", "개인 매출"];
@@ -40,6 +40,7 @@ const els = {
   contractDetail: document.querySelector("#contractDetail"),
   csvInput: document.querySelector("#csvInput"),
   totalRevenue: document.querySelector("#totalRevenue"),
+  totalCommonRevenue: document.querySelector("#totalCommonRevenue"),
   totalGross: document.querySelector("#totalGross"),
   totalFood: document.querySelector("#totalFood"),
   approvalCount: document.querySelector("#approvalCount"),
@@ -282,22 +283,21 @@ function revenueShare(item, memberName) {
   const participants = settlementMembers(item.participants);
   if (!participants.length) return 0;
   if (item.type === "개인 매출") return Math.ceil(Number(item.amount || 0) / participants.length);
-  const totalWeight = participants.reduce((sum, name) => sum + revenueWeight(memberByName(name)), 0);
-  if (!totalWeight) return 0;
-  return Math.round(Number(item.amount || 0) * (revenueWeight(memberByName(memberName)) / totalWeight));
+  return Number(item.amount || 0);
 }
 
 function revenueBreakdown(member) {
-  if (EXCLUDED_ROLES.has(member.role)) return { common: 0, individual: 0, total: 0 };
+  if (EXCLUDED_ROLES.has(member.role)) return { common: 0, individual: 0, total: 0, commonPayout: 0 };
   return state.revenueItems.reduce(
     (acc, item) => {
       const share = revenueShare(item, member.name);
       if (item.type === "개인 매출") acc.individual += share;
       else acc.common += share;
-      acc.total += share;
+      acc.commonPayout = Math.round(acc.common * (Number(member.rate || 0) / 100));
+      acc.total = acc.commonPayout + acc.individual;
       return acc;
     },
-    { common: 0, individual: 0, total: 0 },
+    { common: 0, individual: 0, total: 0, commonPayout: 0 },
   );
 }
 
@@ -328,7 +328,6 @@ function renderContractDetail() {
         <h3>${escapeHtml(member.name)} ${escapeHtml(contract.contractType)}</h3>
       </div>
       <dl class="contract-grid">
-        <div><dt>기여 가중치</dt><dd>${Number(member.revenueWeight || 0)}</dd></div>
         <div><dt>계약 지급률</dt><dd>${Number(member.rate || 0)}%</dd></div>
         <div><dt>인기도 가정</dt><dd>${escapeHtml(contract.popularityTier)}</dd></div>
         <div><dt>연습생 생활비</dt><dd>${escapeHtml(contract.traineeCost)}</dd></div>
@@ -355,7 +354,7 @@ function calculateMember(member) {
     (expense) => inPeriod(expense.date) && expenseStatus(expense) !== "반려" && billableParticipants(expense).includes(member.name),
   );
   const food = memberExpenses.reduce((sum, expense) => sum + expenseShare(expense), 0);
-  const gross = Math.round(revenue.total * (Number(member.rate || 0) / 100));
+  const gross = revenue.total;
   return { revenue, mealCount: memberExpenses.length, gross, food, net: gross - food };
 }
 
@@ -535,9 +534,8 @@ function renderMembers() {
         </select>
       </td>
       <td class="money">${currency.format(calc.revenue.common)}</td>
+      <td class="money">${currency.format(calc.revenue.commonPayout)}</td>
       <td class="money">${currency.format(calc.revenue.individual)}</td>
-      <td class="money">${currency.format(calc.revenue.total)}</td>
-      <td><input type="number" min="0" step="0.1" value="${member.revenueWeight}" data-field="revenueWeight" data-id="${member.id}" aria-label="기여 가중치"></td>
       <td><input type="number" min="0" max="100" step="0.1" value="${member.rate}" data-field="rate" data-id="${member.id}" aria-label="계약 지급률"></td>
       <td><button class="small ghost contract-button" type="button" data-show-contract="${member.id}" title="${escapeHtml(contractLine(member))}">계약 보기</button></td>
       <td>${calc.mealCount}건</td>
@@ -554,7 +552,7 @@ function renderRevenue() {
   els.revenueRows.innerHTML = "";
   state.revenueItems.forEach((item) => {
     const count = settlementMembers(item.participants).length;
-    const mode = item.type === "개인 매출" ? "개인 귀속" : `기여 가중치 배분 (${count}명)`;
+    const mode = item.type === "개인 매출" ? "개인 귀속" : `공통 매출 풀 (${count}명 참여)`;
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><input type="date" value="${item.date}" data-revenue-field="date" data-id="${item.id}" aria-label="매출 날짜"></td>
@@ -676,7 +674,11 @@ function renderTotals() {
     },
     { revenue: 0, gross: 0, food: 0 },
   );
+  const commonRevenue = state.revenueItems
+    .filter((item) => inPeriod(item.date) && item.type === "공통 매출")
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const approvalCount = state.expenses.filter((expense) => inPeriod(expense.date) && ["승인 대기", "보류"].includes(expenseStatus(expense))).length;
+  els.totalCommonRevenue.textContent = currency.format(commonRevenue);
   els.totalRevenue.textContent = currency.format(totals.revenue);
   els.totalGross.textContent = currency.format(totals.gross);
   els.totalFood.textContent = currency.format(totals.food);
@@ -715,6 +717,7 @@ function workbookRows() {
     [{ value: "그룹명", style: 2 }, { value: state.groupName }],
     [{ value: "정산 기간", style: 2 }, { value: `${state.periodStart} ~ ${state.periodEnd}` }],
     [{ value: "1인 승인 기준", style: 2 }, { value: state.approvalLimit, style: 4 }],
+    [{ value: "공통 매출 풀", style: 2 }, { value: state.revenueItems.filter((item) => inPeriod(item.date) && item.type === "공통 매출").reduce((sum, item) => sum + Number(item.amount || 0), 0), style: 4 }],
     [],
   ];
   const revenueRows = state.revenueItems.map((item) => [
@@ -724,15 +727,15 @@ function workbookRows() {
   const memberRows = state.members.map((member) => {
     const calc = calculateMember(member);
     return [
-      { value: member.name }, { value: member.role }, { value: calc.revenue.common, style: 4 }, { value: calc.revenue.individual, style: 4 },
-      { value: calc.revenue.total, style: 4 }, { value: member.revenueWeight, style: 4 }, { value: member.rate, style: 4 }, { value: contractLine(member) }, { value: calc.mealCount, style: 4 },
+      { value: member.name }, { value: member.role }, { value: calc.revenue.common, style: 4 }, { value: calc.revenue.commonPayout, style: 4 },
+      { value: calc.revenue.individual, style: 4 }, { value: member.rate, style: 4 }, { value: contractLine(member) }, { value: calc.mealCount, style: 4 },
       { value: calc.gross, style: 4 }, { value: calc.food, style: 4 }, { value: calc.net, style: 4 },
     ];
   });
   const contractRows = state.members.map((member) => {
     const contract = member.contract || fallbackContract(member);
     return [
-      { value: member.name }, { value: member.role }, { value: member.revenueWeight, style: 4 }, { value: member.rate, style: 4 }, { value: contract.contractType },
+      { value: member.name }, { value: member.role }, { value: member.rate, style: 4 }, { value: contract.contractType },
       { value: contract.popularityTier }, { value: contract.traineeCost }, { value: contract.companyInvestment },
       { value: contract.rateBasis }, { value: contract.specialClause },
     ];
@@ -755,8 +758,8 @@ function workbookRows() {
   return [
     ...summary,
     ...sectionRows("매출 항목", ["날짜", "내역", "구분", "금액", "참여 멤버", "정산 대상 수"], revenueRows),
-    ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출", "개인 매출", "총 매출", "기여 가중치", "계약 지급률", "계약 근거", "식비 건수", "공제 전", "식비 공제", "공제 후"], memberRows),
-    ...sectionRows("계약서 참조", ["멤버", "역할", "기여 가중치", "계약 지급률", "계약 유형", "인기도 가정", "연습생 생활비", "회사 투자", "지급률 근거", "특약"], contractRows),
+    ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출 풀", "공통 정산금", "개인 매출", "계약 지급률", "계약 근거", "식비 건수", "공제 전", "식비 공제", "공제 후"], memberRows),
+    ...sectionRows("계약서 참조", ["멤버", "역할", "계약 지급률", "계약 유형", "인기도 가정", "연습생 생활비", "회사 투자", "지급률 근거", "특약"], contractRows),
     ...sectionRows("비용별 분배", ["날짜", "내역", "금액", "예상 식사인원", "정산 제외", "정산 대상", "1인 금액", "상태", "승인권자"], expenseRows),
     ...sectionRows("승인 필요 건", ["날짜", "내역", "금액", "1인 금액", "상태", "승인권자"], approvalRows),
     ...sectionRows("활동 기록", ["날짜", "멤버", "상태"], activityRows),
