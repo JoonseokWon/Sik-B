@@ -19,6 +19,7 @@ const state = {
   approvalLimit: 30000,
   companyRate: 50,
   members: [],
+  staff: [],
   revenueItems: [],
   expenses: [],
   attendance: [],
@@ -198,8 +199,17 @@ function memberByName(name) {
   return state.members.find((member) => member.name === name);
 }
 
+function staffByName(name) {
+  return state.staff.find((staff) => staff.name === name);
+}
+
+function personByName(name) {
+  return memberByName(name) || staffByName(name);
+}
+
 function isSettlementExcluded(name) {
-  return EXCLUDED_ROLES.has(memberByName(name)?.role);
+  const person = personByName(name);
+  return !memberByName(name) || EXCLUDED_ROLES.has(person?.role) || person?.settlementExcluded === true;
 }
 
 function settlementMembers(names) {
@@ -219,7 +229,7 @@ function activityMembersByDate(date) {
   state.schedules
     .filter((schedule) => schedule.date === date)
     .forEach((schedule) => schedule.members.forEach((name) => names.add(name)));
-  return [...names].filter((name) => memberByName(name));
+  return [...names].filter((name) => personByName(name));
 }
 
 function defaultExcluded(participants) {
@@ -227,7 +237,7 @@ function defaultExcluded(participants) {
 }
 
 function createExpense(date, title, amount) {
-  const managers = state.members.filter((member) => EXCLUDED_ROLES.has(member.role)).map((member) => member.name);
+  const managers = state.staff.filter((person) => person.settlementExcluded || EXCLUDED_ROLES.has(person.role)).map((person) => person.name);
   const participants = [...new Set([...activityMembersByDate(date), ...managers])];
   const expense = {
     id: makeId(),
@@ -482,14 +492,9 @@ function seedData() {
       revenueWeight: 0.6,
       contract: createContract("하", "회사 부담", "높음", "회사 50%를 제외한 멤버 몫 50% 안에서 현재 개인 활동 기여도와 회사 선투자 비중을 반영해 7%를 배정합니다.", "투자 회수 기간 종료 후 지급률 재협상 대상입니다."),
     },
-    {
-      id: makeId(),
-      name: "Manager Park",
-      role: "매니저",
-      rate: 0,
-      revenueWeight: 0,
-      contract: createContract("해당 없음", "해당 없음", "해당 없음", "고정급 및 식비 제공 대상이므로 멤버 정산에서 제외합니다.", "정산 공제 대상이 아닙니다."),
-    },
+  ];
+  state.staff = [
+    { id: makeId(), name: "Manager Park", role: "매니저", settlementExcluded: true },
   ];
   state.selectedContractId = state.members[0].id;
   state.revenueItems = [
@@ -529,6 +534,26 @@ function normalizeState() {
   state.approvalLimit = Number(state.approvalLimit || 30000);
   state.companyRate = Number(state.companyRate ?? 50);
   state.members = Array.isArray(state.members) ? state.members : [];
+  state.staff = Array.isArray(state.staff) ? state.staff : [];
+  const movedStaff = state.members.filter((member) => EXCLUDED_ROLES.has(member.role));
+  if (movedStaff.length) {
+    state.staff.push(...movedStaff.map((member) => ({
+      id: member.id || makeId(),
+      name: member.name,
+      role: member.role,
+      settlementExcluded: true,
+    })));
+    state.members = state.members.filter((member) => !EXCLUDED_ROLES.has(member.role));
+  }
+  const seenStaff = new Set();
+  state.staff = state.staff.filter((person) => {
+    const key = person.name;
+    if (!key || seenStaff.has(key)) return false;
+    seenStaff.add(key);
+    person.role = person.role || "스태프";
+    person.settlementExcluded = true;
+    return true;
+  });
   state.members.forEach((member) => {
     member.role = ROLES.includes(member.role) ? member.role : "멤버";
     member.rate = Number(member.rate || 0);
@@ -998,7 +1023,7 @@ document.addEventListener("click", (event) => {
   if (target.id === "addAttendanceButton") {
     const date = nextAttendanceDate();
     state.members.forEach((member) => {
-      state.attendance.push({ id: makeId(), date, member: member.name, status: EXCLUDED_ROLES.has(member.role) ? "대기" : "출근" });
+      state.attendance.push({ id: makeId(), date, member: member.name, status: "출근" });
     });
     addAudit("활동 날짜 추가", `${date} 활동 기록을 추가했습니다.`);
     render();
