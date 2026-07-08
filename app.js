@@ -10,6 +10,11 @@ const EXCLUDED_ROLES = new Set(["매니저", "스태프", "게스트"]);
 const REVENUE_TYPES = ["공통 매출", "개인 매출"];
 const APPROVAL_STATES = ["자동 처리", "승인 대기", "승인 완료", "반려", "보류"];
 const ACTIVITY_STATES = ["출근", "대기", "외부일정", "제외"];
+const INTERNAL_USERS = [
+  { id: "FIN-1024", name: "정산 담당자", role: "정산 담당자", canEdit: true, canExport: true, canApprove: false },
+  { id: "MGR-2201", name: "상위 매니저", role: "승인권자", canEdit: false, canExport: true, canApprove: true },
+  { id: "HR-3007", name: "인사 마스터", role: "내부 데이터 관리자", canEdit: true, canExport: false, canApprove: false },
+];
 
 const state = {
   version: DATA_VERSION,
@@ -18,6 +23,7 @@ const state = {
   periodEnd: "2026-07-15",
   approvalLimit: 30000,
   companyRate: 50,
+  currentUserId: "FIN-1024",
   members: [],
   staff: [],
   revenueItems: [],
@@ -30,6 +36,8 @@ const state = {
 
 const els = {
   groupName: document.querySelector("#groupName"),
+  currentUser: document.querySelector("#currentUser"),
+  authNotice: document.querySelector("#authNotice"),
   periodStart: document.querySelector("#periodStart"),
   periodEnd: document.querySelector("#periodEnd"),
   approvalLimit: document.querySelector("#approvalLimit"),
@@ -75,15 +83,43 @@ function formatTime(date = new Date()) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function addAudit(action, detail) {
+function currentUser() {
+  return INTERNAL_USERS.find((user) => user.id === state.currentUserId) || INTERNAL_USERS[0];
+}
+
+function actorLabel(user = currentUser()) {
+  return `${user.id} ${user.name}(${user.role})`;
+}
+
+function addAudit(action, detail, user = currentUser()) {
   state.auditLogs.unshift({
     id: makeId(),
     at: formatTime(),
-    actor: "정산 담당자",
+    actor: actorLabel(user),
+    actorId: user.id,
+    actorRole: user.role,
     action,
     detail,
   });
   state.auditLogs = state.auditLogs.slice(0, 80);
+}
+
+function ensureEditPermission(action) {
+  const user = currentUser();
+  if (user.canEdit) return true;
+  addAudit("입력 차단", `${action}: ${user.name} 계정은 입력 권한이 없습니다.`, user);
+  alert("현재 계정은 입력 권한이 없습니다.");
+  render();
+  return false;
+}
+
+function ensureApprovalPermission(action) {
+  const user = currentUser();
+  if (user.canApprove) return true;
+  addAudit("승인 차단", `${action}: ${user.name} 계정은 승인 권한이 없습니다.`, user);
+  alert("현재 계정은 승인 권한이 없습니다.");
+  render();
+  return false;
 }
 
 const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
@@ -439,6 +475,9 @@ function syncExpenseRecommendation(expense) {
 }
 
 function syncInputs() {
+  els.currentUser.innerHTML = INTERNAL_USERS.map((user) => `<option value="${user.id}" ${state.currentUserId === user.id ? "selected" : ""}>${user.id} · ${user.name} · ${user.role}</option>`).join("");
+  const user = currentUser();
+  els.authNotice.textContent = `${user.name} 계정으로 작업 중입니다. 입력 권한 ${user.canEdit ? "있음" : "없음"}, 출력 권한 ${user.canExport ? "있음" : "없음"}, 승인 권한 ${user.canApprove ? "있음" : "없음"}`;
   els.groupName.value = state.groupName;
   els.periodStart.value = state.periodStart;
   els.periodEnd.value = state.periodEnd;
@@ -535,6 +574,7 @@ function normalizeState() {
   state.version = DATA_VERSION;
   state.approvalLimit = Number(state.approvalLimit || 30000);
   state.companyRate = Number(state.companyRate ?? 50);
+  state.currentUserId = state.currentUserId || "FIN-1024";
   state.members = Array.isArray(state.members) ? state.members : [];
   state.staff = Array.isArray(state.staff) ? state.staff : [];
   const movedStaff = state.members.filter((member) => EXCLUDED_ROLES.has(member.role));
@@ -826,7 +866,7 @@ function workbookRows() {
     ]);
   const activityRows = state.attendance.map((row) => [{ value: row.date }, { value: row.member }, { value: row.status }]);
   const scheduleRows = state.schedules.map((row) => [{ value: row.date }, { value: row.title }, { value: row.members.join(", ") }]);
-  const auditRows = state.auditLogs.map((log) => [{ value: log.at }, { value: log.actor }, { value: log.action }, { value: log.detail }]);
+  const auditRows = state.auditLogs.map((log) => [{ value: log.at }, { value: log.actorId || "" }, { value: log.actorRole || "" }, { value: log.actor }, { value: log.action }, { value: log.detail }]);
   return [
     ...summary,
     ...sectionRows("매출 항목", ["날짜", "내역", "구분", "금액", "참여 멤버", "정산 대상 수"], revenueRows),
@@ -836,7 +876,7 @@ function workbookRows() {
     ...sectionRows("승인 필요 건", ["날짜", "내역", "금액", "1인 금액", "상태", "승인권자"], approvalRows),
     ...sectionRows("활동 기록", ["날짜", "멤버", "상태"], activityRows),
     ...sectionRows("일정표", ["날짜", "일정명", "참여 멤버"], scheduleRows),
-    ...sectionRows("감사 로그", ["일시", "작업자", "작업", "내용"], auditRows),
+    ...sectionRows("감사 로그", ["일시", "작업자 ID", "권한", "작업자", "작업", "내용"], auditRows),
   ];
 }
 
@@ -903,6 +943,14 @@ function buildXlsxBytes() {
 }
 
 function exportWorkbook() {
+  const user = currentUser();
+  if (!user.canExport) {
+    addAudit("출력 차단", `${user.name} 계정은 Excel 출력 권한이 없습니다.`, user);
+    alert("현재 계정은 Excel 출력 권한이 없습니다.");
+    render();
+    return;
+  }
+  addAudit("Excel 출력", `${state.groupName} ${state.periodStart}~${state.periodEnd} 정산 근거 파일을 출력했습니다.`, user);
   const workbook = buildXlsxBytes();
   const blob = new Blob([workbook], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
@@ -918,12 +966,25 @@ function exportWorkbook() {
 
 document.addEventListener("input", (event) => {
   const target = event.target;
+  if (target === els.currentUser) {
+    state.currentUserId = target.value;
+    addAudit("내부 계정 전환", `${actorLabel()} 계정으로 전환했습니다.`);
+    render();
+    return;
+  }
   if ([els.groupName, els.periodStart, els.periodEnd, els.approvalLimit].includes(target)) updateSettings();
 });
 
 document.addEventListener("change", (event) => {
   const target = event.target;
+  if (target === els.currentUser) {
+    state.currentUserId = target.value;
+    addAudit("내부 계정 전환", `${actorLabel()} 계정으로 전환했습니다.`);
+    render();
+    return;
+  }
   if (target.dataset.field) {
+    if (!ensureEditPermission("멤버 정보 수정")) return;
     const member = state.members.find((item) => item.id === target.dataset.id);
     const previousName = member.name;
     const previous = member[target.dataset.field];
@@ -953,6 +1014,7 @@ document.addEventListener("change", (event) => {
     render();
   }
   if (target.dataset.revenueField) {
+    if (!ensureEditPermission("매출 항목 수정")) return;
     const item = state.revenueItems.find((row) => row.id === target.dataset.id);
     const previous = item[target.dataset.revenueField];
     if (target.dataset.revenueField === "amount") item.amount = Number(target.value || 0);
@@ -964,6 +1026,9 @@ document.addEventListener("change", (event) => {
   if (target.dataset.expenseField) {
     const expense = state.expenses.find((item) => item.id === target.dataset.id);
     const previous = expense[target.dataset.expenseField];
+    if (target.dataset.expenseField === "approvalStatus") {
+      if (!ensureApprovalPermission(`${expense.title} 승인 상태 변경`)) return;
+    } else if (!ensureEditPermission("비용 건 수정")) return;
     if (target.dataset.expenseField === "amount") expense.amount = Number(target.value || 0);
     else if (target.dataset.expenseField === "participants") {
       expense.participants = splitNames(target.value);
@@ -979,10 +1044,12 @@ document.addEventListener("change", (event) => {
     render();
   }
   if (target.dataset.attendanceCellDate) {
+    if (!ensureEditPermission("활동 기록 수정")) return;
     setAttendance(target.dataset.attendanceCellDate, target.dataset.attendanceCellMember, target.value);
     render();
   }
   if (target.dataset.attendanceDate) {
+    if (!ensureEditPermission("활동 날짜 변경")) return;
     const previousDate = target.dataset.attendanceDate;
     state.attendance.forEach((row) => {
       if (row.date === previousDate) row.date = target.value;
@@ -991,6 +1058,7 @@ document.addEventListener("change", (event) => {
     render();
   }
   if (target.dataset.scheduleField) {
+    if (!ensureEditPermission("일정표 수정")) return;
     const row = state.schedules.find((item) => item.id === target.dataset.id);
     const previous = row[target.dataset.scheduleField];
     row[target.dataset.scheduleField] = target.dataset.scheduleField === "members" ? splitNames(target.value) : target.value;
@@ -1008,10 +1076,8 @@ document.addEventListener("click", (event) => {
     seedData();
   }
   if (target.id === "addMemberButton") {
-    const member = { id: makeId(), name: "New", role: "멤버", rate: 40, revenueWeight: 1, contract: fallbackContract({ role: "멤버" }) };
-    state.members.push(member);
-    state.selectedContractId = member.id;
-    addAudit("멤버 추가", "New 멤버를 추가했습니다.");
+    const hrUser = INTERNAL_USERS.find((user) => user.id === "HR-3007");
+    addAudit("내부 멤버 동기화", "회사 내부 그룹 마스터 데이터에서 Samildol 멤버 5명을 확인했습니다. 수기 추가는 허용하지 않습니다.", hrUser);
     render();
   }
   if (target.dataset.showContract) {
@@ -1019,18 +1085,21 @@ document.addEventListener("click", (event) => {
     render();
   }
   if (target.id === "addRevenueButton") {
+    if (!ensureEditPermission("매출 항목 추가")) return;
     const first = state.members.find((item) => item.role === "멤버")?.name || "New";
     state.revenueItems.push(createRevenue(state.periodStart, "새 매출", "공통 매출", 0, [first]));
     addAudit("매출 항목 추가", "새 매출 항목을 추가했습니다.");
     render();
   }
   if (target.id === "addExpenseButton") {
+    if (!ensureEditPermission("비용 추가")) return;
     const expense = createExpense(state.periodStart, "새 식비", 0);
     state.expenses.push(expense);
     addAudit("비용 추가", `${expense.date} 새 식비를 추가했습니다.`);
     render();
   }
   if (target.id === "addAttendanceButton") {
+    if (!ensureEditPermission("활동 날짜 추가")) return;
     const date = nextAttendanceDate();
     state.members.forEach((member) => {
       state.attendance.push({ id: makeId(), date, member: member.name, status: "출근" });
@@ -1039,12 +1108,14 @@ document.addEventListener("click", (event) => {
     render();
   }
   if (target.id === "addScheduleButton") {
+    if (!ensureEditPermission("일정 추가")) return;
     const member = state.members.find((item) => item.role === "멤버")?.name || "New";
     state.schedules.push({ id: makeId(), date: state.periodStart, title: "새 일정", members: [member] });
     addAudit("일정 추가", "새 일정을 추가했습니다.");
     render();
   }
   if (target.id === "importCsvButton") {
+    if (!ensureEditPermission("활동 기록 가져오기")) return;
     const rows = els.csvInput.value
       .split(/\r?\n/)
       .map((line) => line.split(",").map((cell) => cell.trim()))
@@ -1054,34 +1125,40 @@ document.addEventListener("click", (event) => {
     render();
   }
   if (target.dataset.recommendExpense) {
+    if (!ensureEditPermission("예상 식사인원 불러오기")) return;
     const expense = state.expenses.find((item) => item.id === target.dataset.recommendExpense);
     syncExpenseRecommendation(expense);
     render();
   }
   if (target.dataset.removeMember) {
+    if (!ensureEditPermission("멤버 삭제")) return;
     const member = state.members.find((item) => item.id === target.dataset.removeMember);
     state.members = state.members.filter((item) => item.id !== target.dataset.removeMember);
     addAudit("멤버 삭제", `${member?.name || "알 수 없음"}을 삭제했습니다.`);
     render();
   }
   if (target.dataset.removeRevenue) {
+    if (!ensureEditPermission("매출 항목 삭제")) return;
     const item = state.revenueItems.find((row) => row.id === target.dataset.removeRevenue);
     state.revenueItems = state.revenueItems.filter((row) => row.id !== target.dataset.removeRevenue);
     addAudit("매출 항목 삭제", `${item?.title || "알 수 없음"}을 삭제했습니다.`);
     render();
   }
   if (target.dataset.removeExpense) {
+    if (!ensureEditPermission("비용 삭제")) return;
     const expense = state.expenses.find((item) => item.id === target.dataset.removeExpense);
     state.expenses = state.expenses.filter((item) => item.id !== target.dataset.removeExpense);
     addAudit("비용 삭제", `${expense?.title || "알 수 없음"}을 삭제했습니다.`);
     render();
   }
   if (target.dataset.removeAttendanceDate) {
+    if (!ensureEditPermission("활동 날짜 삭제")) return;
     state.attendance = state.attendance.filter((row) => row.date !== target.dataset.removeAttendanceDate);
     addAudit("활동 날짜 삭제", `${target.dataset.removeAttendanceDate} 활동 기록을 삭제했습니다.`);
     render();
   }
   if (target.dataset.removeSchedule) {
+    if (!ensureEditPermission("일정 삭제")) return;
     const schedule = state.schedules.find((item) => item.id === target.dataset.removeSchedule);
     state.schedules = state.schedules.filter((item) => item.id !== target.dataset.removeSchedule);
     addAudit("일정 삭제", `${schedule?.title || "알 수 없음"}을 삭제했습니다.`);

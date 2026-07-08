@@ -55,6 +55,11 @@
         <aside class="panel settings-panel">
           <h2>정산 조건</h2>
           <label>
+            내부 계정
+            <select id="currentUser"></select>
+          </label>
+          <div id="authNotice" class="note auth-note"></div>
+          <label>
             그룹명
             <input id="groupName" type="text" value="Samildol">
           </label>
@@ -85,7 +90,7 @@
               <h2>멤버별 정산</h2>
               <p>회사 몫을 포함한 지급률 합계가 100%가 되도록 두고, 공통/개인 매출에 각 멤버의 계약 지급률을 적용합니다. 계약 조건은 계약서 참조에서 확인합니다.</p>
             </div>
-            <button id="addMemberButton" type="button" class="small">멤버 추가</button>
+            <button id="addMemberButton" type="button" class="small">내부 멤버 동기화</button>
           </div>
           <div class="table-wrap">
             <table>
