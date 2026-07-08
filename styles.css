@@ -129,6 +129,7 @@ h2 {
 
 .summary-strip article {
   padding: 16px;
+  text-align: center;
 }
 
 .summary-strip span {
@@ -207,7 +208,9 @@ textarea {
 }
 
 .compact-section + .compact-section {
-  margin-top: 14px;
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
 }
 
 .compact-section-header {

@@ -859,7 +859,7 @@ function workbookRows() {
     [{ value: "정산 기간", style: 2 }, { value: `${state.periodStart} ~ ${state.periodEnd}` }],
     [{ value: "1인 승인 기준", style: 2 }, { value: state.approvalLimit, style: 4 }],
     [{ value: "공통 매출 풀", style: 2 }, { value: commonRevenuePool(), style: 4 }],
-    [{ value: "회사 몫", style: 2 }, { value: companyShareAmount(), style: 4 }],
+    [{ value: "회사 분배금", style: 2 }, { value: companyShareAmount(), style: 4 }],
     [{ value: "지급률 합계", style: 2 }, { value: contractRateTotal(), style: 4 }],
     [],
   ];
