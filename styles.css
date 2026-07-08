@@ -524,17 +524,49 @@ td select {
   grid-template-columns: 150px 1fr 1.4fr 36px;
 }
 
-.import-panel {
+.integration-panel {
   display: grid;
-  grid-template-columns: 220px 1fr auto;
-  gap: 14px;
-  align-items: end;
+  gap: 16px;
   margin-top: 18px;
 }
 
-.import-panel p {
+.integration-panel p {
   margin-bottom: 0;
   color: var(--muted);
+}
+
+.integration-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.integration-grid article {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #f8fbfc;
+}
+
+.integration-grid strong {
+  font-size: 15px;
+}
+
+.integration-grid span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.integration-grid b {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #e7f2ee;
+  color: var(--ok);
+  font-size: 12px;
 }
 
 @media (max-width: 980px) {
@@ -552,7 +584,7 @@ td select {
   .summary-strip,
   .workspace,
   .lower-grid,
-  .import-panel {
+  .integration-grid {
     grid-template-columns: 1fr;
   }
 

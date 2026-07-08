@@ -4,7 +4,7 @@ const currency = new Intl.NumberFormat("ko-KR", {
   maximumFractionDigits: 0,
 });
 
-const DATA_VERSION = 11;
+const DATA_VERSION = 12;
 const ROLES = ["멤버", "매니저", "스태프", "게스트"];
 const EXCLUDED_ROLES = new Set(["매니저", "스태프", "게스트"]);
 const REVENUE_TYPES = ["공통 매출", "개인 매출"];
@@ -49,7 +49,7 @@ const els = {
   scheduleList: document.querySelector("#scheduleList"),
   auditList: document.querySelector("#auditList"),
   contractDetail: document.querySelector("#contractDetail"),
-  csvInput: document.querySelector("#csvInput"),
+  syncExternalButton: document.querySelector("#syncExternalButton"),
   totalRevenue: document.querySelector("#totalRevenue"),
   totalCommonRevenue: document.querySelector("#totalCommonRevenue"),
   companyShare: document.querySelector("#companyShare"),
@@ -568,6 +568,29 @@ function seedData() {
   ];
   syncInputs();
   render();
+}
+
+function syncExternalSources() {
+  const attendanceRows = [
+    ["2026-07-01", "Haru", "출근"], ["2026-07-01", "Min", "출근"], ["2026-07-01", "Seo", "출근"], ["2026-07-01", "Lia", "출근"],
+    ["2026-07-03", "Haru", "외부일정"], ["2026-07-03", "Min", "외부일정"], ["2026-07-03", "Seo", "외부일정"], ["2026-07-03", "Lia", "외부일정"], ["2026-07-03", "Noa", "외부일정"],
+    ["2026-07-06", "Min", "출근"], ["2026-07-06", "Seo", "출근"],
+    ["2026-07-09", "Haru", "외부일정"], ["2026-07-09", "Lia", "외부일정"], ["2026-07-09", "Noa", "외부일정"],
+    ["2026-07-10", "Haru", "외부일정"], ["2026-07-10", "Min", "외부일정"], ["2026-07-10", "Seo", "외부일정"], ["2026-07-10", "Lia", "외부일정"], ["2026-07-10", "Noa", "외부일정"],
+  ];
+  const schedules = [
+    { date: "2026-07-01", title: "컴백 안무 연습", members: ["Haru", "Min", "Seo", "Lia"] },
+    { date: "2026-07-03", title: "음악 방송 사전녹화", members: ["Haru", "Min", "Seo", "Lia", "Noa"] },
+    { date: "2026-07-06", title: "라디오 게스트", members: ["Min", "Seo"] },
+    { date: "2026-07-09", title: "안무 수정 리허설", members: ["Haru", "Lia", "Noa"] },
+    { date: "2026-07-10", title: "콘서트 리허설", members: ["Haru", "Min", "Seo", "Lia", "Noa"] },
+  ];
+  state.attendance = state.attendance.filter((row) => row.date < state.periodStart || row.date > state.periodEnd);
+  state.attendance.push(...attendanceRows.map(([date, member, status]) => ({ id: makeId(), date, member, status })));
+  state.schedules = state.schedules.filter((row) => row.date < state.periodStart || row.date > state.periodEnd);
+  state.schedules.push(...schedules.map((row) => ({ id: makeId(), ...row })));
+  state.expenses.forEach(syncExpenseRecommendation);
+  addAudit("외부 데이터 동기화", "회사 입출 기록, 그룹 캘린더, 결제 내역 더미 커넥터로 활동 기록과 예상 식사인원을 갱신했습니다.");
 }
 
 function normalizeState() {
@@ -1145,14 +1168,9 @@ document.addEventListener("click", (event) => {
     addAudit("일정 추가", "새 일정을 추가했습니다.");
     render();
   }
-  if (target.id === "importCsvButton") {
-    if (!ensureEditPermission("활동 기록 가져오기")) return;
-    const rows = els.csvInput.value
-      .split(/\r?\n/)
-      .map((line) => line.split(",").map((cell) => cell.trim()))
-      .filter((cells) => cells.length >= 2 && cells[0] && cells[1]);
-    state.attendance.push(...rows.map(([date, member, status = "출근"]) => ({ id: makeId(), date, member, status })));
-    addAudit("활동 기록 가져오기", `${rows.length}건을 가져왔습니다.`);
+  if (target.id === "syncExternalButton") {
+    if (!ensureEditPermission("외부 데이터 동기화")) return;
+    syncExternalSources();
     render();
   }
   if (target.dataset.recommendExpense) {

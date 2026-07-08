@@ -156,14 +156,31 @@
         </section>
       </section>
 
-      <section class="panel import-panel">
-        <div>
-          <h2>활동 기록 CSV</h2>
-          <p>형식: 날짜,멤버,상태</p>
+      <section class="panel integration-panel">
+        <div class="panel-header">
+          <div>
+            <h2>외부 데이터 연동</h2>
+            <p>회사 입출 기록, 그룹 캘린더, 결제 내역을 연결해 활동 기록과 예상 식사인원을 자동으로 갱신합니다.</p>
+          </div>
+          <button id="syncExternalButton" type="button">외부 데이터 동기화</button>
         </div>
-        <textarea id="csvInput" rows="5" spellcheck="false">2026-07-01,Haru,출근
-2026-07-01,Min,출근</textarea>
-        <button id="importCsvButton" type="button">활동 기록 가져오기</button>
+        <div class="integration-grid">
+          <article>
+            <strong>회사 입출 기록</strong>
+            <span>출근/대기 상태 자동 반영</span>
+            <b>연결됨</b>
+          </article>
+          <article>
+            <strong>그룹 캘린더</strong>
+            <span>공연, 방송, 외부 행사 참여자 반영</span>
+            <b>연결됨</b>
+          </article>
+          <article>
+            <strong>법인카드/배달 결제</strong>
+            <span>식비 결제 건과 일정 참여자 매칭</span>
+            <b>더미 연결</b>
+          </article>
+        </div>
       </section>
 
       <section class="panel audit-panel">
