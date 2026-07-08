@@ -4,7 +4,7 @@ const currency = new Intl.NumberFormat("ko-KR", {
   maximumFractionDigits: 0,
 });
 
-const DATA_VERSION = 8;
+const DATA_VERSION = 9;
 const ROLES = ["멤버", "매니저", "스태프", "게스트"];
 const EXCLUDED_ROLES = new Set(["매니저", "스태프", "게스트"]);
 const REVENUE_TYPES = ["공통 매출", "개인 매출"];
@@ -23,6 +23,7 @@ const state = {
   attendance: [],
   schedules: [],
   auditLogs: [],
+  selectedContractId: "",
 };
 
 const els = {
@@ -36,6 +37,7 @@ const els = {
   attendanceList: document.querySelector("#attendanceList"),
   scheduleList: document.querySelector("#scheduleList"),
   auditList: document.querySelector("#auditList"),
+  contractDetail: document.querySelector("#contractDetail"),
   csvInput: document.querySelector("#csvInput"),
   totalRevenue: document.querySelector("#totalRevenue"),
   totalGross: document.querySelector("#totalGross"),
@@ -199,6 +201,11 @@ function settlementMembers(names) {
   return [...new Set(names)].filter((name) => memberByName(name) && !isSettlementExcluded(name));
 }
 
+function revenueWeight(member) {
+  if (EXCLUDED_ROLES.has(member.role)) return 0;
+  return Number(member.revenueWeight || 1);
+}
+
 function activityMembersByDate(date) {
   const names = new Set();
   state.attendance
@@ -235,6 +242,18 @@ function createRevenue(date, title, type, amount, participants) {
   return { id: makeId(), date, title, type, amount, participants };
 }
 
+function createContract(popularityTier, traineeCost, companyInvestment, rateBasis, specialClause) {
+  return {
+    effectiveDate: "2026-07-01",
+    contractType: "멤버 전속계약",
+    popularityTier,
+    traineeCost,
+    companyInvestment,
+    rateBasis,
+    specialClause,
+  };
+}
+
 function billableParticipants(expense) {
   return expense.participants.filter((name) => !expense.excluded.includes(name));
 }
@@ -262,7 +281,10 @@ function revenueShare(item, memberName) {
   if (!inPeriod(item.date) || isSettlementExcluded(memberName) || !item.participants.includes(memberName)) return 0;
   const participants = settlementMembers(item.participants);
   if (!participants.length) return 0;
-  return Math.ceil(Number(item.amount || 0) / participants.length);
+  if (item.type === "개인 매출") return Math.ceil(Number(item.amount || 0) / participants.length);
+  const totalWeight = participants.reduce((sum, name) => sum + revenueWeight(memberByName(name)), 0);
+  if (!totalWeight) return 0;
+  return Math.round(Number(item.amount || 0) * (revenueWeight(memberByName(memberName)) / totalWeight));
 }
 
 function revenueBreakdown(member) {
@@ -277,6 +299,51 @@ function revenueBreakdown(member) {
     },
     { common: 0, individual: 0, total: 0 },
   );
+}
+
+function fallbackContract(member) {
+  if (EXCLUDED_ROLES.has(member.role)) {
+    return createContract("해당 없음", "해당 없음", "해당 없음", "정산 제외 역할입니다.", "멤버 정산 대상이 아닙니다.");
+  }
+  return createContract("미설정", "미설정", "미설정", "계약 조건을 확인해 지급률 근거를 입력해야 합니다.", "계약서 참조 정보가 아직 등록되지 않았습니다.");
+}
+
+function contractLine(member) {
+  const contract = member.contract || fallbackContract(member);
+  return `${contract.popularityTier} / ${contract.traineeCost} / ${contract.companyInvestment}`;
+}
+
+function renderContractDetail() {
+  if (!els.contractDetail) return;
+  const member = state.members.find((item) => item.id === state.selectedContractId) || state.members.find((item) => item.role === "멤버") || state.members[0];
+  if (!member) {
+    els.contractDetail.innerHTML = "";
+    return;
+  }
+  const contract = member.contract || fallbackContract(member);
+  els.contractDetail.innerHTML = `
+    <div class="contract-card">
+      <div>
+        <span class="contract-label">계약서 참조</span>
+        <h3>${escapeHtml(member.name)} ${escapeHtml(contract.contractType)}</h3>
+      </div>
+      <dl class="contract-grid">
+        <div><dt>기여 가중치</dt><dd>${Number(member.revenueWeight || 0)}</dd></div>
+        <div><dt>계약 지급률</dt><dd>${Number(member.rate || 0)}%</dd></div>
+        <div><dt>인기도 가정</dt><dd>${escapeHtml(contract.popularityTier)}</dd></div>
+        <div><dt>연습생 생활비</dt><dd>${escapeHtml(contract.traineeCost)}</dd></div>
+        <div><dt>회사 투자</dt><dd>${escapeHtml(contract.companyInvestment)}</dd></div>
+      </dl>
+      <p><strong>지급률 근거</strong><br>${escapeHtml(contract.rateBasis)}</p>
+      <p><strong>특약</strong><br>${escapeHtml(contract.specialClause)}</p>
+      <p class="contract-footnote">더미 계약서 기준일: ${escapeHtml(contract.effectiveDate)} · 실제 계약서가 아니라 PoC용 가정 문서입니다.</p>
+    </div>
+  `;
+}
+
+function applyContractPreset(member) {
+  const contract = member.contract || fallbackContract(member);
+  member.contract = contract;
 }
 
 function calculateMember(member) {
@@ -343,13 +410,56 @@ function seedData() {
   state.periodEnd = "2026-07-15";
   state.approvalLimit = 30000;
   state.members = [
-    { id: makeId(), name: "Haru", role: "멤버", rate: 45 },
-    { id: makeId(), name: "Min", role: "멤버", rate: 43 },
-    { id: makeId(), name: "Seo", role: "멤버", rate: 44 },
-    { id: makeId(), name: "Lia", role: "멤버", rate: 42 },
-    { id: makeId(), name: "Noa", role: "멤버", rate: 40 },
-    { id: makeId(), name: "Manager Park", role: "매니저", rate: 0 },
+    {
+      id: makeId(),
+      name: "Haru",
+      role: "멤버",
+      rate: 58,
+      revenueWeight: 1.3,
+      contract: createContract("상", "본인 부담", "낮음", "개인 팬덤과 예능 수요가 가장 높고 연습생 생활비 일부를 본인이 부담해 계약 지급률을 우대합니다.", "개인 활동 매출은 Haru 귀속 매출로 우선 인식합니다."),
+    },
+    {
+      id: makeId(),
+      name: "Min",
+      role: "멤버",
+      rate: 54,
+      revenueWeight: 1.2,
+      contract: createContract("상", "본인 일부 부담", "중간", "라디오와 방송 고정 수요가 있고 초기 비용 일부를 부담해 평균보다 높은 지급률을 적용합니다.", "개인 DJ/방송 매출은 Min 귀속 매출로 분리합니다."),
+    },
+    {
+      id: makeId(),
+      name: "Seo",
+      role: "멤버",
+      rate: 48,
+      revenueWeight: 1.1,
+      contract: createContract("중상", "회사 부담", "높음", "개인 연기 매출은 있으나 회사가 트레이닝과 프로모션 비용을 크게 부담해 지급률을 중간 수준으로 둡니다.", "연기/카메오 매출은 Seo 귀속 매출로 분리하되 회사 투자 회수 조건을 반영합니다."),
+    },
+    {
+      id: makeId(),
+      name: "Lia",
+      role: "멤버",
+      rate: 38,
+      revenueWeight: 0.8,
+      contract: createContract("중", "회사 부담", "높음", "개인 매출이 아직 적고 회사 트레이닝/콘텐츠 투자 비중이 높아 보수적인 지급률을 적용합니다.", "공통 매출은 참여 멤버 기준으로 귀속하고 개인 매출은 발생 시 별도 반영합니다."),
+    },
+    {
+      id: makeId(),
+      name: "Noa",
+      role: "멤버",
+      rate: 34,
+      revenueWeight: 0.6,
+      contract: createContract("성장", "회사 부담", "높음", "신인 성장 구간으로 회사 선투자와 생활비 지원 비중이 높아 가장 낮은 지급률을 가정합니다.", "투자 회수 기간 종료 후 지급률 재협상 대상입니다."),
+    },
+    {
+      id: makeId(),
+      name: "Manager Park",
+      role: "매니저",
+      rate: 0,
+      revenueWeight: 0,
+      contract: createContract("해당 없음", "해당 없음", "해당 없음", "고정급 및 식비 제공 대상이므로 멤버 정산에서 제외합니다.", "정산 공제 대상이 아닙니다."),
+    },
   ];
+  state.selectedContractId = state.members[0].id;
   state.revenueItems = [
     createRevenue("2026-07-02", "쇼케이스 공연 수익", "공통 매출", 48000000, ["Haru", "Min", "Seo", "Lia", "Noa"]),
     createRevenue("2026-07-04", "Haru 예능 출연료", "개인 매출", 8000000, ["Haru"]),
@@ -389,7 +499,10 @@ function normalizeState() {
   state.members.forEach((member) => {
     member.role = ROLES.includes(member.role) ? member.role : "멤버";
     member.rate = Number(member.rate || 0);
+    member.revenueWeight = Number(member.revenueWeight ?? (EXCLUDED_ROLES.has(member.role) ? 0 : 1));
+    applyContractPreset(member);
   });
+  if (!state.selectedContractId && state.members.length) state.selectedContractId = state.members[0].id;
   state.revenueItems = Array.isArray(state.revenueItems) ? state.revenueItems : [];
   state.revenueItems.forEach((item) => {
     item.type = REVENUE_TYPES.includes(item.type) ? item.type : "공통 매출";
@@ -424,7 +537,9 @@ function renderMembers() {
       <td class="money">${currency.format(calc.revenue.common)}</td>
       <td class="money">${currency.format(calc.revenue.individual)}</td>
       <td class="money">${currency.format(calc.revenue.total)}</td>
+      <td><input type="number" min="0" step="0.1" value="${member.revenueWeight}" data-field="revenueWeight" data-id="${member.id}" aria-label="기여 가중치"></td>
       <td><input type="number" min="0" max="100" step="0.1" value="${member.rate}" data-field="rate" data-id="${member.id}" aria-label="계약 지급률"></td>
+      <td><button class="small ghost contract-button" type="button" data-show-contract="${member.id}" title="${escapeHtml(contractLine(member))}">계약 보기</button></td>
       <td>${calc.mealCount}건</td>
       <td class="money">${currency.format(calc.gross)}</td>
       <td class="money deduction">-${currency.format(calc.food)}</td>
@@ -439,7 +554,7 @@ function renderRevenue() {
   els.revenueRows.innerHTML = "";
   state.revenueItems.forEach((item) => {
     const count = settlementMembers(item.participants).length;
-    const mode = item.type === "개인 매출" ? "개인 귀속" : `참여 멤버 균등 배분 (${count}명)`;
+    const mode = item.type === "개인 매출" ? "개인 귀속" : `기여 가중치 배분 (${count}명)`;
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><input type="date" value="${item.date}" data-revenue-field="date" data-id="${item.id}" aria-label="매출 날짜"></td>
@@ -578,6 +693,7 @@ function render() {
   renderAttendance();
   renderSchedules();
   renderAuditLogs();
+  renderContractDetail();
   renderTotals();
 }
 
@@ -609,8 +725,16 @@ function workbookRows() {
     const calc = calculateMember(member);
     return [
       { value: member.name }, { value: member.role }, { value: calc.revenue.common, style: 4 }, { value: calc.revenue.individual, style: 4 },
-      { value: calc.revenue.total, style: 4 }, { value: member.rate, style: 4 }, { value: calc.mealCount, style: 4 },
+      { value: calc.revenue.total, style: 4 }, { value: member.revenueWeight, style: 4 }, { value: member.rate, style: 4 }, { value: contractLine(member) }, { value: calc.mealCount, style: 4 },
       { value: calc.gross, style: 4 }, { value: calc.food, style: 4 }, { value: calc.net, style: 4 },
+    ];
+  });
+  const contractRows = state.members.map((member) => {
+    const contract = member.contract || fallbackContract(member);
+    return [
+      { value: member.name }, { value: member.role }, { value: member.revenueWeight, style: 4 }, { value: member.rate, style: 4 }, { value: contract.contractType },
+      { value: contract.popularityTier }, { value: contract.traineeCost }, { value: contract.companyInvestment },
+      { value: contract.rateBasis }, { value: contract.specialClause },
     ];
   });
   const expenseRows = state.expenses.map((expense) => [
@@ -631,7 +755,8 @@ function workbookRows() {
   return [
     ...summary,
     ...sectionRows("매출 항목", ["날짜", "내역", "구분", "금액", "참여 멤버", "정산 대상 수"], revenueRows),
-    ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출", "개인 매출", "총 매출", "계약 지급률", "식비 건수", "공제 전", "식비 공제", "공제 후"], memberRows),
+    ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출", "개인 매출", "총 매출", "기여 가중치", "계약 지급률", "계약 근거", "식비 건수", "공제 전", "식비 공제", "공제 후"], memberRows),
+    ...sectionRows("계약서 참조", ["멤버", "역할", "기여 가중치", "계약 지급률", "계약 유형", "인기도 가정", "연습생 생활비", "회사 투자", "지급률 근거", "특약"], contractRows),
     ...sectionRows("비용별 분배", ["날짜", "내역", "금액", "예상 식사인원", "정산 제외", "정산 대상", "1인 금액", "상태", "승인권자"], expenseRows),
     ...sectionRows("승인 필요 건", ["날짜", "내역", "금액", "1인 금액", "상태", "승인권자"], approvalRows),
     ...sectionRows("활동 기록", ["날짜", "멤버", "상태"], activityRows),
@@ -727,7 +852,7 @@ document.addEventListener("change", (event) => {
     const member = state.members.find((item) => item.id === target.dataset.id);
     const previousName = member.name;
     const previous = member[target.dataset.field];
-    member[target.dataset.field] = target.dataset.field === "rate" ? Number(target.value || 0) : target.value;
+    member[target.dataset.field] = ["rate", "revenueWeight"].includes(target.dataset.field) ? Number(target.value || 0) : target.value;
     if (target.dataset.field === "name") {
       state.revenueItems.forEach((item) => {
         item.participants = item.participants.map((name) => (name === previousName ? member.name : name));
@@ -806,8 +931,14 @@ document.addEventListener("click", (event) => {
     seedData();
   }
   if (target.id === "addMemberButton") {
-    state.members.push({ id: makeId(), name: "New", role: "멤버", rate: 40 });
+    const member = { id: makeId(), name: "New", role: "멤버", rate: 40, revenueWeight: 1, contract: fallbackContract({ role: "멤버" }) };
+    state.members.push(member);
+    state.selectedContractId = member.id;
     addAudit("멤버 추가", "New 멤버를 추가했습니다.");
+    render();
+  }
+  if (target.dataset.showContract) {
+    state.selectedContractId = target.dataset.showContract;
     render();
   }
   if (target.id === "addRevenueButton") {

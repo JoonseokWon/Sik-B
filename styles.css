@@ -194,7 +194,7 @@ textarea {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 1320px;
+  min-width: 1480px;
 }
 
 .attendance-table {
@@ -238,6 +238,69 @@ td select {
 
 .recommend-button {
   min-width: 118px;
+}
+
+.contract-button {
+  min-width: 88px;
+}
+
+.contract-detail {
+  margin-top: 16px;
+}
+
+.contract-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+  background: #f8fbfc;
+}
+
+.contract-card h3 {
+  margin: 4px 0 0;
+  font-size: 18px;
+}
+
+.contract-label {
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.contract-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.contract-grid div {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px;
+  background: #fff;
+}
+
+.contract-grid dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.contract-grid dd {
+  margin: 4px 0 0;
+  font-weight: 700;
+}
+
+.contract-card p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.contract-footnote {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .money {
@@ -365,6 +428,10 @@ td select {
 
   .record-row,
   .schedule-row {
+    grid-template-columns: 1fr;
+  }
+
+  .contract-grid {
     grid-template-columns: 1fr;
   }
 }
