@@ -194,7 +194,24 @@ textarea {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 1040px;
+  min-width: 1320px;
+}
+
+.attendance-table {
+  min-width: 720px;
+}
+
+.revenue-panel,
+.expense-panel {
+  margin-top: 18px;
+}
+
+.revenue-panel p,
+.expense-panel p,
+.table-panel p {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 th,
@@ -213,6 +230,14 @@ th {
 
 td input {
   min-width: 110px;
+}
+
+td select {
+  min-width: 92px;
+}
+
+.recommend-button {
+  min-width: 118px;
 }
 
 .money {
@@ -234,14 +259,8 @@ td input {
   margin-top: 18px;
 }
 
-.expense-panel {
+.audit-panel {
   margin-top: 18px;
-}
-
-.expense-panel p {
-  margin-bottom: 0;
-  color: var(--muted);
-  font-size: 13px;
 }
 
 .status {
@@ -267,6 +286,33 @@ td input {
 
 .approval-row {
   background: #fffaf0;
+}
+
+.audit-list {
+  display: grid;
+  gap: 10px;
+}
+
+.audit-row {
+  border-left: 3px solid var(--brand);
+  padding: 10px 12px;
+  background: #f7fbfc;
+}
+
+.audit-row strong,
+.audit-row span {
+  display: block;
+}
+
+.audit-row span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.audit-row p {
+  margin: 6px 0 0;
+  line-height: 1.5;
 }
 
 .record-list {
