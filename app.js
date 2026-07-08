@@ -635,7 +635,6 @@ function renderMembers() {
           ${ROLES.map((role) => `<option value="${role}" ${member.role === role ? "selected" : ""}>${role}</option>`).join("")}
         </select>
       </td>
-      <td class="money">${currency.format(calc.revenue.common)}</td>
       <td class="money">${currency.format(calc.revenue.commonPayout)}</td>
       <td class="money">${currency.format(calc.revenue.individualPayout)}</td>
       <td><input type="number" min="0" max="100" step="0.1" value="${member.rate}" data-field="rate" data-id="${member.id}" aria-label="계약 지급률"></td>
@@ -652,7 +651,18 @@ function renderMembers() {
 
 function renderRevenue() {
   els.revenueRows.innerHTML = "";
-  state.revenueItems.forEach((item) => {
+  const renderGroup = (type, title) => {
+    const items = state.revenueItems.filter((item) => item.type === type);
+    const section = document.createElement("section");
+    section.className = "compact-section";
+    const total = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+    section.innerHTML = `
+      <div class="compact-section-header">
+        <h3>${title}</h3>
+        <strong>${currency.format(total)}</strong>
+      </div>
+    `;
+    items.forEach((item) => {
     const count = settlementMembers(item.participants).length;
     const mode = item.type === "개인 매출" ? "개인 귀속" : `공통 매출 풀 (${count}명 참여)`;
     const card = document.createElement("article");
@@ -678,8 +688,12 @@ function renderRevenue() {
         <label class="wide-field">참여/귀속 멤버<input value="${escapeHtml(item.participants.join(", "))}" data-revenue-field="participants" data-id="${item.id}" aria-label="매출 참여 멤버"></label>
       </div>
     `;
-    els.revenueRows.appendChild(card);
-  });
+      section.appendChild(card);
+    });
+    els.revenueRows.appendChild(section);
+  };
+  renderGroup("공통 매출", "공통 매출");
+  renderGroup("개인 매출", "개인 매출");
 }
 
 function renderExpenses() {
@@ -793,9 +807,10 @@ function renderTotals() {
       acc.revenue += calc.revenue.total;
       acc.gross += calc.gross;
       acc.food += calc.food;
+      acc.net += calc.net;
       return acc;
     },
-    { revenue: 0, gross: 0, food: 0 },
+    { revenue: 0, gross: 0, food: 0, net: 0 },
   );
   const commonRevenue = commonRevenuePool();
   const rateTotal = contractRateTotal();
@@ -804,7 +819,7 @@ function renderTotals() {
   els.companyShare.textContent = currency.format(companyShareAmount());
   els.rateTotal.textContent = `${rateTotal}%`;
   els.rateTotal.parentElement?.classList.toggle("warning-card", rateTotal !== 100);
-  els.totalRevenue.textContent = currency.format(totals.revenue);
+  els.totalRevenue.textContent = currency.format(totals.net);
   els.totalGross.textContent = currency.format(totals.gross);
   els.totalFood.textContent = currency.format(totals.food);
   els.approvalCount.textContent = `${approvalCount}건`;
@@ -855,7 +870,7 @@ function workbookRows() {
   const memberRows = state.members.map((member) => {
     const calc = calculateMember(member);
     return [
-      { value: member.name }, { value: member.role }, { value: calc.revenue.common, style: 4 }, { value: calc.revenue.commonPayout, style: 4 },
+      { value: member.name }, { value: member.role }, { value: calc.revenue.commonPayout, style: 4 },
       { value: calc.revenue.individual, style: 4 }, { value: calc.revenue.individualPayout, style: 4 }, { value: member.rate, style: 4 }, { value: contractLine(member) }, { value: calc.mealCount, style: 4 },
       { value: calc.gross, style: 4 }, { value: calc.food, style: 4 }, { value: calc.net, style: 4 },
     ];
@@ -886,7 +901,7 @@ function workbookRows() {
   return [
     ...summary,
     ...sectionRows("매출 항목", ["날짜", "내역", "구분", "금액", "참여 멤버", "정산 대상 수"], revenueRows),
-    ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출 풀", "공통 정산금", "개인 매출 원금", "개인 정산금", "계약 지급률", "계약 근거", "식비 건수", "공제 전", "식비 공제", "공제 후"], memberRows),
+    ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출 정산금", "개인 매출 원금", "개인 매출 정산금", "계약 지급률", "계약 근거", "식비 건수", "공제 전", "식비 공제", "공제 후"], memberRows),
     ...sectionRows("계약서 참조", ["멤버", "역할", "계약 지급률", "계약 유형", "개인 활동 기여도", "연습생 생활비", "회사 투자", "지급률 근거", "특약"], contractRows),
     ...sectionRows("비용별 분배", ["날짜", "내역", "금액", "예상 식사인원", "정산 제외", "정산 대상", "1인 금액", "상태", "승인권자"], expenseRows),
     ...sectionRows("승인 필요 건", ["날짜", "내역", "금액", "1인 금액", "상태", "승인권자"], approvalRows),
