@@ -59,7 +59,7 @@
             <input id="approvalLimit" type="number" min="0" step="1000" value="30000">
           </label>
           <div class="note">
-            출퇴근 기록과 일정표를 기준으로 식사 인원을 추천하고, 매니저/스태프/게스트는 정산 제외로 자동 분류합니다.
+            출퇴근 기록과 일정표를 기준으로 예상 식사인원을 산출하고, 매니저/스태프/게스트는 정산 제외로 자동 분류합니다.
           </div>
         </aside>
 
@@ -124,7 +124,7 @@
         <div class="panel-header">
           <div>
             <h2>식비 결제 건</h2>
-            <p>비용 날짜를 기준으로 출퇴근 기록과 일정표에서 식사 인원을 추천할 수 있습니다.</p>
+            <p>비용 날짜를 기준으로 출퇴근 기록과 일정표에서 예상 식사인원을 불러올 수 있습니다.</p>
           </div>
           <button id="addExpenseButton" type="button" class="small">비용 추가</button>
         </div>
@@ -135,13 +135,13 @@
                 <th>날짜</th>
                 <th>내역</th>
                 <th>금액</th>
-                <th>식사 인원</th>
+                <th>예상 식사인원</th>
                 <th>정산 제외</th>
                 <th>배분 방식</th>
                 <th>1인 금액</th>
                 <th>승인 상태</th>
                 <th>승인권자</th>
-                <th>식사 인원 추천</th>
+                <th>예상 식사인원</th>
                 <th></th>
               </tr>
             </thead>

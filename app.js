@@ -326,7 +326,7 @@ function syncExpenseRecommendation(expense) {
   expense.participants = participants;
   expense.excluded = defaultExcluded(participants);
   expense.approvalStatus = defaultApprovalStatus(expense);
-  addAudit("식사 인원 추천 적용", `${expense.date} ${expense.title}: ${previous || "없음"} -> ${participants.join(", ") || "추천 없음"}`);
+  addAudit("예상 식사인원 적용", `${expense.date} ${expense.title}: ${previous || "없음"} -> ${participants.join(", ") || "예상 없음"}`);
 }
 
 function syncInputs() {
@@ -471,7 +471,7 @@ function renderExpenses() {
       <td><input type="date" value="${expense.date}" data-expense-field="date" data-id="${expense.id}" aria-label="날짜"></td>
       <td><input value="${escapeHtml(expense.title)}" data-expense-field="title" data-id="${expense.id}" aria-label="내역"></td>
       <td><input type="number" min="0" step="1000" value="${expense.amount}" data-expense-field="amount" data-id="${expense.id}" aria-label="금액"></td>
-      <td><input value="${escapeHtml(expense.participants.join(", "))}" data-expense-field="participants" data-id="${expense.id}" aria-label="식사 인원"></td>
+      <td><input value="${escapeHtml(expense.participants.join(", "))}" data-expense-field="participants" data-id="${expense.id}" aria-label="예상 식사인원"></td>
       <td><input value="${escapeHtml(expense.excluded.join(", "))}" data-expense-field="excluded" data-id="${expense.id}" aria-label="정산 제외"></td>
       <td>정산 대상 균등 배분 (${billableCount}명)</td>
       <td class="money">${currency.format(share)}</td>
@@ -481,7 +481,7 @@ function renderExpenses() {
         </select>
       </td>
       <td><input value="${escapeHtml(expense.approver)}" data-expense-field="approver" data-id="${expense.id}" aria-label="승인권자"></td>
-      <td><button class="small recommend-button" type="button" data-recommend-expense="${expense.id}" title="같은 날짜의 출퇴근 기록과 일정표를 기준으로 식사 인원을 채웁니다.">식사 인원 추천</button></td>
+      <td><button class="small recommend-button" type="button" data-recommend-expense="${expense.id}" title="같은 날짜의 출퇴근 기록과 일정표를 기준으로 예상 식사인원을 채웁니다.">예상 식사인원</button></td>
       <td><button class="remove" type="button" data-remove-expense="${expense.id}" aria-label="비용 삭제">x</button></td>
     `;
     els.expenseRows.appendChild(tr);
@@ -632,7 +632,7 @@ function workbookRows() {
     ...summary,
     ...sectionRows("매출 항목", ["날짜", "내역", "구분", "금액", "참여 멤버", "정산 대상 수"], revenueRows),
     ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출", "개인 매출", "총 매출", "정산율", "식비 건수", "공제 전", "식비 공제", "공제 후"], memberRows),
-    ...sectionRows("비용별 분배", ["날짜", "내역", "금액", "식사 인원", "정산 제외", "정산 대상", "1인 금액", "상태", "승인권자"], expenseRows),
+    ...sectionRows("비용별 분배", ["날짜", "내역", "금액", "예상 식사인원", "정산 제외", "정산 대상", "1인 금액", "상태", "승인권자"], expenseRows),
     ...sectionRows("승인 필요 건", ["날짜", "내역", "금액", "1인 금액", "상태", "승인권자"], approvalRows),
     ...sectionRows("활동 기록", ["날짜", "멤버", "상태"], activityRows),
     ...sectionRows("일정표", ["날짜", "일정명", "참여 멤버"], scheduleRows),
