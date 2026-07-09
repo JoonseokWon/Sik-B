@@ -169,6 +169,8 @@ h2 {
   grid-template-columns: 320px 1fr;
   gap: 18px;
   align-items: start;
+  width: calc(100% + 72px);
+  margin-left: -72px;
 }
 
 .panel {
@@ -621,6 +623,11 @@ td select {
   .lower-grid,
   .integration-grid {
     grid-template-columns: 1fr;
+  }
+
+  .workspace {
+    width: 100%;
+    margin-left: 0;
   }
 
   .record-row,
