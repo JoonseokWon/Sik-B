@@ -96,7 +96,14 @@ button.remove {
 }
 
 .topbar {
+  flex-direction: column;
+  justify-content: center;
   margin-bottom: 18px;
+  text-align: center;
+}
+
+.topbar .actions {
+  justify-content: center;
 }
 
 .eyebrow {
@@ -126,9 +133,10 @@ h2 {
 
 .summary-strip {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 180px));
   gap: 12px;
   margin-bottom: 18px;
+  justify-content: center;
 }
 
 .summary-strip article,
