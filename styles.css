@@ -161,8 +161,6 @@ h2 {
   grid-template-columns: 320px 1fr;
   gap: 18px;
   align-items: start;
-  width: min(1320px, 100%);
-  margin: 0 auto;
 }
 
 .panel {
