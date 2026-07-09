@@ -82,7 +82,7 @@ button.remove {
 
 .app-shell {
   width: min(1720px, 100%);
-  margin: 0 auto;
+  margin: 0 auto 0 max(28px, calc((100% - 1720px) / 2 - 90px));
   padding: 28px;
 }
 
