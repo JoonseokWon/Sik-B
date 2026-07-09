@@ -81,7 +81,7 @@ button.remove {
 }
 
 .app-shell {
-  width: min(1440px, 100%);
+  width: min(1720px, 100%);
   margin: 0 auto;
   padding: 28px;
 }
