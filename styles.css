@@ -328,13 +328,14 @@ textarea {
 }
 
 .expense-edit {
-  grid-template-columns: 150px 1fr 150px 1.4fr 180px 1.2fr 150px 1.2fr 150px 180px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 .meal-skip-field {
   display: grid;
   gap: 6px;
-  min-width: 230px;
+  min-width: 0;
+  grid-column: span 2;
   color: var(--muted);
   font-size: 13px;
   font-weight: 600;
@@ -369,22 +370,6 @@ textarea {
   margin: 0;
 }
 
-.exception-card {
-  border-color: #e3b341;
-  box-shadow: inset 4px 0 #e3b341;
-}
-
-.exception-badge {
-  display: inline-block;
-  margin-left: 7px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: #fff1b8;
-  color: #7a5200;
-  font-size: 11px;
-  font-weight: 800;
-}
-
 .exception-check {
   align-content: end;
   grid-template-columns: auto auto;
@@ -411,6 +396,11 @@ textarea {
 
 .wide-field {
   min-width: 260px;
+}
+
+.expense-edit .wide-field {
+  min-width: 0;
+  grid-column: span 2;
 }
 
 .compact-formula {
@@ -802,5 +792,10 @@ td select {
   .revenue-edit,
   .expense-edit {
     grid-template-columns: 1fr;
+  }
+
+  .expense-edit .wide-field,
+  .meal-skip-field {
+    grid-column: span 1;
   }
 }

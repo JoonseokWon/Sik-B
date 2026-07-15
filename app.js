@@ -764,6 +764,70 @@ function seedData() {
   render();
 }
 
+function seedOtherIdolData() {
+  state.version = DATA_VERSION;
+  state.groupName = "Lunelle";
+  state.periodStart = "2026-07-16";
+  state.periodEnd = "2026-07-31";
+  state.approvalLimit = 30000;
+  state.concurrentApprovalCount = 3;
+  state.companyRate = 50;
+  state.members = [
+    {
+      id: makeId(), name: "Ari", role: "멤버", rate: 15, revenueWeight: 1.3,
+      contract: createContract("상", "본인 일부 부담", "중간", "개인 광고와 패션 행사 기여도를 반영해 멤버 몫 중 15%를 배정합니다.", "개인 광고 매출에도 동일 지급률을 적용합니다."),
+    },
+    {
+      id: makeId(), name: "Bora", role: "멤버", rate: 13, revenueWeight: 1.1,
+      contract: createContract("중상", "회사 부담", "높음", "보컬 활동과 음원 기여도를 반영해 멤버 몫 중 13%를 배정합니다.", "OST 매출은 개인 매출로 구분합니다."),
+    },
+    {
+      id: makeId(), name: "Yuna", role: "멤버", rate: 12, revenueWeight: 1,
+      contract: createContract("중", "회사 부담", "높음", "방송과 팬 커뮤니티 기여도를 반영해 멤버 몫 중 12%를 배정합니다.", "방송 고정 출연료는 개인 매출로 구분합니다."),
+    },
+    {
+      id: makeId(), name: "Dami", role: "멤버", rate: 10, revenueWeight: 0.8,
+      contract: createContract("중", "회사 부담", "높음", "퍼포먼스와 해외 활동 기여도를 반영해 멤버 몫 중 10%를 배정합니다.", "해외 활동 증가 시 지급률 재협상 대상입니다."),
+    },
+  ];
+  state.staff = [{ id: makeId(), name: "Manager Choi", role: "매니저", settlementExcluded: true }];
+  state.selectedContractId = state.members[0].id;
+  state.revenueItems = [
+    createRevenue("2026-07-17", "미니앨범 쇼케이스", "공통 매출", 36000000, ["Ari", "Bora", "Yuna", "Dami"]),
+    createRevenue("2026-07-20", "Ari 패션 브랜드 광고", "개인 매출", 9500000, ["Ari"]),
+    createRevenue("2026-07-23", "Bora 드라마 OST", "개인 매출", 6800000, ["Bora"]),
+    createRevenue("2026-07-27", "아시아 팬미팅", "공통 매출", 54000000, ["Ari", "Bora", "Yuna", "Dami"]),
+    createRevenue("2026-07-29", "Yuna 예능 고정 출연료", "개인 매출", 5200000, ["Yuna"]),
+  ];
+  state.attendance = [
+    ["2026-07-16", "Ari", "출근"], ["2026-07-16", "Bora", "출근"], ["2026-07-16", "Yuna", "출근"], ["2026-07-16", "Dami", "출근"],
+    ["2026-07-18", "Ari", "외부일정"], ["2026-07-18", "Bora", "외부일정"], ["2026-07-18", "Yuna", "외부일정"], ["2026-07-18", "Dami", "외부일정"],
+    ["2026-07-21", "Bora", "출근"], ["2026-07-21", "Yuna", "출근"],
+    ["2026-07-25", "Ari", "외부일정"], ["2026-07-25", "Bora", "외부일정"], ["2026-07-25", "Yuna", "외부일정"], ["2026-07-25", "Dami", "외부일정"],
+  ].map(([date, member, status]) => ({ id: makeId(), date, member, status }));
+  state.schedules = [
+    { id: makeId(), date: "2026-07-16", title: "컴백 안무 합주", members: ["Ari", "Bora", "Yuna", "Dami"] },
+    { id: makeId(), date: "2026-07-18", title: "음악방송 리허설", members: ["Ari", "Bora", "Yuna", "Dami"] },
+    { id: makeId(), date: "2026-07-21", title: "라디오 스페셜 DJ", members: ["Bora", "Yuna"] },
+    { id: makeId(), date: "2026-07-25", title: "팬미팅 무대 점검", members: ["Ari", "Bora", "Yuna", "Dami"] },
+  ];
+  state.expenses = [
+    createExpense("2026-07-16", "합주실 점심", 118000, "12:15"),
+    createExpense("2026-07-18", "방송국 도시락", 132000, "11:40"),
+    createExpense("2026-07-21", "라디오 대기 식사", 54000, "18:10"),
+    createExpense("2026-07-25", "팬미팅 리허설 저녁", 126000, "19:05"),
+  ];
+  state.marketingPayroll = [
+    { id: makeId(), name: "Han Sora", role: "마케팅 팀장", monthlySalary: 4600000, hours: { Ari: 32, Bora: 24, Yuna: 20, Dami: 16 } },
+    { id: makeId(), name: "Oh Jin", role: "콘텐츠 마케터", monthlySalary: 3700000, hours: { Ari: 18, Bora: 26, Yuna: 30, Dami: 22 } },
+  ];
+  state.marketingInitialized = true;
+  state.auditLogs = [];
+  addAudit("다른 아이돌 더미 연동", "Lunelle 멤버 4명, 매출, 활동 기록, 일정, 식비, 마케팅 급여 데이터를 불러왔습니다.");
+  syncInputs();
+  render();
+}
+
 function syncExternalSources() {
   const attendanceRows = [
     ["2026-07-01", "Haru", "출근"], ["2026-07-01", "Min", "출근"], ["2026-07-01", "Seo", "출근"], ["2026-07-01", "Lia", "출근"],
@@ -969,13 +1033,12 @@ function renderExpenses() {
     const approvalReasonText = expenseApprovalReasons(expense).join(" · ") || "승인 조건 해당 없음";
     const billableCount = billableParticipants(expense).length;
     const card = document.createElement("article");
-    card.className = `compact-card ${needsApproval && status !== "승인 완료" ? "approval-card" : ""} ${expense.isExceptional ? "exception-card" : ""}`;
+    card.className = `compact-card ${needsApproval && status !== "승인 완료" ? "approval-card" : ""}`;
     card.innerHTML = `
       <div class="compact-summary">
         <div>
           <span class="compact-date">${escapeHtml(expense.date)} ${escapeHtml(expense.transactionTime)}</span>
           <strong>${escapeHtml(expense.title)}</strong>
-          ${expense.isExceptional ? '<span class="exception-badge">특이</span>' : ""}
           <span class="compact-sub">예상 ${billableCount}명 · ${escapeHtml(expenseStatus(expense))} · ${escapeHtml(approvalReasonText)} · ${escapeHtml(expense.recommendationNote)}</span>
         </div>
         <div class="compact-money">${currency.format(expense.amount)}</div>
@@ -1575,6 +1638,10 @@ document.addEventListener("change", (event) => {
 document.addEventListener("click", (event) => {
   const target = event.target;
   if (target.id === "exportButton") exportWorkbook();
+  if (target.id === "otherDummyButton") {
+    if (!ensureEditPermission("다른 아이돌 더미 연동")) return;
+    seedOtherIdolData();
+  }
   if (target.id === "importIdolButton") openExternalFilePicker();
   if (target.id === "resetButton") {
     localStorage.removeItem("foodFeeState");
@@ -1582,7 +1649,7 @@ document.addEventListener("click", (event) => {
   }
   if (target.id === "addMemberButton") {
     const hrUser = INTERNAL_USERS.find((user) => user.id === "HR-3007");
-    addAudit("내부 멤버 동기화", "회사 내부 그룹 마스터 데이터에서 Samildol 멤버 5명을 확인했습니다. 수기 추가는 허용하지 않습니다.", hrUser);
+    addAudit("내부 멤버 동기화", `회사 내부 그룹 마스터 데이터에서 ${state.groupName} 멤버 ${state.members.length}명을 확인했습니다. 수기 추가는 허용하지 않습니다.`, hrUser);
     render();
   }
   if (target.dataset.showContract) {
