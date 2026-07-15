@@ -11,10 +11,10 @@ const REVENUE_TYPES = ["공통 매출", "개인 매출"];
 const APPROVAL_STATES = ["자동 처리", "승인 대기", "승인 완료", "반려", "보류"];
 const ACTIVITY_STATES = ["출근", "대기", "외부일정", "제외"];
 const INTERNAL_USERS = [
-  { id: "FIN-1024", name: "삼일돌 정산 담당자", role: "정산 담당자", password: "1024", assignedGroup: "Samildol", assignedGroupLabel: "삼일돌", canEdit: true, canExport: false, canApprove: false, canViewAudit: false },
-  { id: "FIN-1025", name: "삼데헌 정산 담당자", role: "정산 담당자", password: "1025", assignedGroup: "삼데헌", assignedGroupLabel: "삼데헌", canEdit: true, canExport: false, canApprove: false, canViewAudit: false },
-  { id: "MGR-2201", name: "상위 매니저", role: "상위 매니저", password: "2201", canEdit: true, canExport: true, canApprove: false, canViewAudit: false },
-  { id: "HR-3007", name: "인사 마스터", role: "내부 데이터 관리자", password: "3007", canEdit: true, canExport: true, canApprove: true, canViewAudit: true },
+  { id: "FIN-1024", name: "삼일돌 현장 매니저", role: "현장 매니저", password: "1024", assignedGroup: "Samildol", assignedGroupLabel: "삼일돌", canEdit: true, canExport: false, canApprove: false, canViewAudit: false, canViewMarketingPayroll: false },
+  { id: "FIN-1025", name: "삼데헌 현장 매니저", role: "현장 매니저", password: "1025", assignedGroup: "삼데헌", assignedGroupLabel: "삼데헌", canEdit: true, canExport: false, canApprove: false, canViewAudit: false, canViewMarketingPayroll: false },
+  { id: "MGR-2201", name: "상위 매니저", role: "상위 매니저", password: "2201", canEdit: true, canExport: true, canApprove: false, canViewAudit: false, canViewMarketingPayroll: false },
+  { id: "HR-3007", name: "인사 마스터", role: "내부 데이터 관리자", password: "3007", canEdit: true, canExport: true, canApprove: true, canViewAudit: true, canViewMarketingPayroll: true },
 ];
 
 const state = {
@@ -198,7 +198,11 @@ function ensureIntegrationPermission(action) {
 }
 
 function isFoodOnlyUser(user = currentUser()) {
-  return user.role === "정산 담당자";
+  return user.role === "현장 매니저";
+}
+
+function canViewMarketingPayroll(user = currentUser()) {
+  return user.canViewMarketingPayroll === true;
 }
 
 function assignedStateKey(user) {
@@ -239,8 +243,8 @@ function ensureGeneralEditPermission(action) {
   if (!ensureEditPermission(action)) return false;
   const user = currentUser();
   if (!isFoodOnlyUser(user)) return true;
-  addAudit("업무 범위 차단", `${action}: 정산 담당자는 현재 아이돌의 식비 정산 업무만 수행할 수 있습니다.`, user);
-  alert("정산 담당자는 현재 아이돌의 식비 정산 업무만 수행할 수 있습니다.");
+  addAudit("업무 범위 차단", `${action}: 현장 매니저는 현재 아이돌의 식비 정산 업무만 수행할 수 있습니다.`, user);
+  alert("현장 매니저는 현재 아이돌의 식비 정산 업무만 수행할 수 있습니다.");
   render();
   return false;
 }
@@ -1027,7 +1031,7 @@ function seedData() {
   state.marketingPayroll = defaultMarketingPayroll();
   state.marketingInitialized = true;
   state.auditLogs = [
-    { id: makeId(), at: "2026-07-08 09:00", actor: "정산 담당자", action: "더미 데이터 준비", detail: "Samildol 활동 기록, 일정표, 매출 항목, 식비 결제 건, 마케팅 사업부 급여와 아이돌별 투입시간을 불러왔습니다." },
+    { id: makeId(), at: "2026-07-08 09:00", actor: "현장 매니저", action: "더미 데이터 준비", detail: "Samildol 활동 기록, 일정표, 매출 항목, 식비 결제 건, 마케팅 사업부 급여와 아이돌별 투입시간을 불러왔습니다." },
   ];
   syncInputs();
   render();
@@ -1197,7 +1201,7 @@ function renderMembers() {
       <td>${calc.mealCount}건</td>
       <td class="money">${currency.format(calc.gross)}</td>
       <td class="money deduction">-${currency.format(calc.food)}</td>
-      <td class="money deduction">-${currency.format(calc.marketing)}</td>
+      <td class="money deduction" data-marketing-sensitive>-${currency.format(calc.marketing)}</td>
       <td class="money net">${currency.format(calc.net)}</td>
       <td><button class="remove" type="button" data-remove-member="${member.id}" aria-label="멤버 삭제">x</button></td>
     `;
@@ -1455,6 +1459,9 @@ function applyRoleVisibility() {
   document.querySelectorAll("[data-settlement-sensitive], [data-settlement-section]").forEach((element) => {
     element.hidden = foodOnly;
   });
+  document.querySelectorAll("[data-marketing-sensitive]").forEach((element) => {
+    element.hidden = !canViewMarketingPayroll(user);
+  });
   els.auditPanel.hidden = !user.canViewAudit;
   els.exportButton.hidden = !user.canExport;
   els.importIdolButton.hidden = !canSwitchIdol(user);
@@ -1540,6 +1547,7 @@ function sectionRows(title, headers, rows) {
 }
 
 function workbookRows() {
+  const showMarketingPayroll = canViewMarketingPayroll();
   const summary = [
     [{ value: "Food-Fee 정산 결과", style: 1 }],
     [{ value: "그룹명", style: 2 }, { value: state.groupName }],
@@ -1549,7 +1557,7 @@ function workbookRows() {
     [{ value: "공통 매출 풀", style: 2 }, { value: commonRevenuePool(), style: 4 }],
     [{ value: "회사 분배금", style: 2 }, { value: companyShareAmount(), style: 4 }],
     [{ value: "지급률 합계", style: 2 }, { value: contractRateTotal(), style: 4 }],
-    [{ value: "마케팅 급여 상계 합계", style: 2 }, { value: totalMarketingOffset(), style: 4 }],
+    ...(showMarketingPayroll ? [[{ value: "마케팅 급여 상계 합계", style: 2 }, { value: totalMarketingOffset(), style: 4 }]] : []),
     [],
   ];
   const revenueRows = state.revenueItems.map((item) => [
@@ -1561,7 +1569,9 @@ function workbookRows() {
     return [
       { value: member.name }, { value: member.role }, { value: calc.revenue.commonPayout, style: 4 },
       { value: calc.revenue.individual, style: 4 }, { value: calc.revenue.individualPayout, style: 4 }, { value: member.rate, style: 4 }, { value: contractLine(member) }, { value: calc.mealCount, style: 4 },
-      { value: calc.gross, style: 4 }, { value: calc.food, style: 4 }, { value: calc.marketing, style: 4 }, { value: calc.net, style: 4 },
+      { value: calc.gross, style: 4 }, { value: calc.food, style: 4 },
+      ...(showMarketingPayroll ? [{ value: calc.marketing, style: 4 }] : []),
+      { value: calc.net, style: 4 },
     ];
   });
   const marketingRows = state.marketingPayroll.flatMap((employee) => {
@@ -1605,8 +1615,8 @@ function workbookRows() {
   return [
     ...summary,
     ...sectionRows("매출 항목", ["날짜", "내역", "구분", "금액", "참여 멤버", "정산 대상 수"], revenueRows),
-    ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출 정산금", "개인 매출 원금", "개인 매출 정산금", "계약 지급률", "계약 근거", "식비 건수", "공제 전", "식비 공제", "마케팅 급여 상계", "공제 후"], memberRows),
-    ...sectionRows("마케팅 급여 배부", ["직원", "직무", "월 급여", "대상 아이돌", "투입시간", "직원 총 투입시간", "배부액"], marketingRows),
+    ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출 정산금", "개인 매출 원금", "개인 매출 정산금", "계약 지급률", "계약 근거", "식비 건수", "공제 전", "식비 공제", ...(showMarketingPayroll ? ["마케팅 급여 상계"] : []), "공제 후"], memberRows),
+    ...(showMarketingPayroll ? sectionRows("마케팅 급여 배부", ["직원", "직무", "월 급여", "대상 아이돌", "투입시간", "직원 총 투입시간", "배부액"], marketingRows) : []),
     ...sectionRows("계약서 참조", ["멤버", "역할", "계약 지급률", "계약 유형", "개인 활동 기여도", "연습생 생활비", "회사 투자", "지급률 근거", "특약"], contractRows),
     ...sectionRows("비용별 분배", ["날짜", "결제 시간", "실제 식비", "예상 식사인원", "식사 생략 인원", "별도 식사 인원", "기타 정산 제외", "정산 대상", "1인 금액", "상태", "승인 사유", "승인권자", "특이 체크", "비고(사유)"], expenseRows),
     ...sectionRows("승인 필요 건", ["날짜", "결제 시간", "금액", "1인 금액", "상태", "승인 사유", "승인권자"], approvalRows),

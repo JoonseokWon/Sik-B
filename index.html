@@ -62,7 +62,7 @@
           <span>식비 공제 합계</span>
           <strong id="totalFood">0원</strong>
         </article>
-        <article data-settlement-sensitive>
+        <article data-settlement-sensitive data-marketing-sensitive>
           <span>마케팅 급여 상계</span>
           <strong id="totalMarketing">0원</strong>
         </article>
@@ -131,7 +131,7 @@
                   <th>식비 건수</th>
                   <th>공제 전</th>
                   <th>식비 공제</th>
-                  <th>마케팅 급여 상계</th>
+                  <th data-marketing-sensitive>마케팅 급여 상계</th>
                   <th>공제 후</th>
                   <th></th>
                 </tr>
@@ -165,7 +165,7 @@
         <div id="expenseRows" class="compact-list"></div>
       </section>
 
-      <section class="panel marketing-panel" data-settlement-section>
+      <section class="panel marketing-panel" data-settlement-section data-marketing-sensitive>
         <div class="panel-header">
           <div>
             <h2>마케팅 사업부 급여 배부</h2>
@@ -234,6 +234,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=20260715-role-integration-controls"></script>
+    <script src="app.js?v=20260715-manager-payroll-visibility"></script>
   </body>
 </html>
