@@ -1132,7 +1132,7 @@ function renderExpenses() {
     const card = document.createElement("article");
     card.className = `compact-card ${needsApproval && status !== "승인 완료" ? "approval-card" : ""}`;
     card.innerHTML = `
-      <div class="compact-summary">
+      <div class="compact-summary expense-summary">
         <div>
           <span class="compact-date">${escapeHtml(expense.date)} ${escapeHtml(expense.transactionTime)}</span>
           <strong>${escapeHtml(expense.title)}</strong>
@@ -1140,7 +1140,9 @@ function renderExpenses() {
         </div>
         <div class="compact-money">${currency.format(expense.amount)}</div>
         <div class="compact-money">1인 ${currency.format(share)}</div>
-        ${canApproveExpense && needsApproval && status !== "승인 완료" ? `<button class="small approve-button" type="button" data-approve-expense="${expense.id}">승인</button>` : ""}
+        <div class="approval-action">
+          ${canApproveExpense && needsApproval && status !== "승인 완료" ? `<button class="small approve-button" type="button" data-approve-expense="${expense.id}">승인</button>` : ""}
+        </div>
         <button class="remove" type="button" data-remove-expense="${expense.id}" aria-label="비용 삭제">x</button>
       </div>
       <div class="compact-edit expense-edit">

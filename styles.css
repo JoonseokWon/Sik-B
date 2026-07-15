@@ -360,6 +360,16 @@ textarea {
   padding: 12px;
 }
 
+.expense-summary {
+  grid-template-columns: minmax(260px, 1fr) 150px minmax(220px, 0.8fr) 72px 36px;
+}
+
+.approval-action {
+  display: grid;
+  min-height: 38px;
+  place-items: center;
+}
+
 .compact-summary strong {
   display: block;
   margin-top: 3px;
