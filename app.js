@@ -11,7 +11,8 @@ const REVENUE_TYPES = ["공통 매출", "개인 매출"];
 const APPROVAL_STATES = ["자동 처리", "승인 대기", "승인 완료", "반려", "보류"];
 const ACTIVITY_STATES = ["출근", "대기", "외부일정", "제외"];
 const INTERNAL_USERS = [
-  { id: "FIN-1024", name: "정산 담당자", role: "정산 담당자", password: "1024", canEdit: true, canExport: false, canApprove: false, canViewAudit: false },
+  { id: "FIN-1024", name: "삼일돌 정산 담당자", role: "정산 담당자", password: "1024", assignedGroup: "Samildol", assignedGroupLabel: "삼일돌", canEdit: true, canExport: false, canApprove: false, canViewAudit: false },
+  { id: "FIN-1025", name: "삼데헌 정산 담당자", role: "정산 담당자", password: "1025", assignedGroup: "삼데헌", assignedGroupLabel: "삼데헌", canEdit: true, canExport: false, canApprove: false, canViewAudit: false },
   { id: "MGR-2201", name: "상위 매니저", role: "상위 매니저", password: "2201", canEdit: true, canExport: true, canApprove: false, canViewAudit: false },
   { id: "HR-3007", name: "인사 마스터", role: "내부 데이터 관리자", password: "3007", canEdit: true, canExport: true, canApprove: true, canViewAudit: true },
 ];
@@ -114,7 +115,7 @@ function isAuthenticated() {
 }
 
 function showLogin(message = "") {
-  els.loginUserId.innerHTML = INTERNAL_USERS.map((user) => `<option value="${user.id}">${user.id} · ${user.name}</option>`).join("");
+  els.loginUserId.innerHTML = INTERNAL_USERS.map((user) => `<option value="${user.id}">${user.id}, ${user.name}</option>`).join("");
   els.loginUserId.value = state.currentUserId || INTERNAL_USERS[0].id;
   els.loginPassword.value = "";
   els.loginError.textContent = message;
@@ -175,7 +176,41 @@ function hasAllPermissions(user = currentUser()) {
 }
 
 function isFoodOnlyUser(user = currentUser()) {
-  return user.id === "FIN-1024";
+  return user.role === "정산 담당자";
+}
+
+function assignedStateKey(user) {
+  return user?.assignedGroup ? `foodFeeState:${user.id}` : "";
+}
+
+function persistState() {
+  const serialized = JSON.stringify(state);
+  localStorage.setItem("foodFeeState", serialized);
+  const key = assignedStateKey(authenticatedUser());
+  if (key) localStorage.setItem(key, serialized);
+}
+
+function loadAssignedIdol(user) {
+  if (!user?.assignedGroup) return false;
+  const saved = localStorage.getItem(assignedStateKey(user));
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved);
+      if (parsed.version === DATA_VERSION && parsed.groupName === user.assignedGroup) {
+        Object.assign(state, parsed);
+        state.currentUserId = user.id;
+        normalizeState();
+        return true;
+      }
+    } catch (error) {
+      console.warn("담당 아이돌 저장 데이터를 복원하지 못했습니다.", error);
+    }
+  }
+
+  state.currentUserId = user.id;
+  if (user.assignedGroup === "삼데헌") seedOtherIdolData();
+  else seedData();
+  return false;
 }
 
 function ensureGeneralEditPermission(action) {
@@ -694,7 +729,7 @@ function renderContractDetail() {
       </dl>
       <p><strong>지급률 근거</strong><br>${escapeHtml(contract.rateBasis)}</p>
       <p><strong>특약</strong><br>${escapeHtml(contract.specialClause)}</p>
-      <p class="contract-footnote">더미 계약서 기준일: ${escapeHtml(contract.effectiveDate)} · 실제 계약서가 아니라 PoC용 가정 문서입니다.</p>
+      <p class="contract-footnote">더미 계약서 기준일: ${escapeHtml(contract.effectiveDate)}, 실제 계약서가 아니라 PoC용 가정 문서입니다.</p>
     </div>
   `;
 }
@@ -759,9 +794,9 @@ function syncExpenseRecommendation(expense) {
 }
 
 function syncInputs() {
-  els.currentUser.innerHTML = INTERNAL_USERS.map((user) => `<option value="${user.id}" ${state.currentUserId === user.id ? "selected" : ""}>${user.id} · ${user.name} · ${user.role}</option>`).join("");
+  els.currentUser.innerHTML = INTERNAL_USERS.map((user) => `<option value="${user.id}" ${state.currentUserId === user.id ? "selected" : ""}>${user.id}, ${user.name}, ${user.role}</option>`).join("");
   const user = currentUser();
-  const scopeNotice = isFoodOnlyUser(user) ? " · 업무 범위: 현재 아이돌 식비 정산 전용" : "";
+  const scopeNotice = isFoodOnlyUser(user) ? `, 담당 아이돌: ${user.assignedGroupLabel || user.assignedGroup}, 업무 범위: 담당 아이돌 식비 정산 전용` : "";
   els.authNotice.textContent = `${user.name} 계정으로 작업 중입니다. 입력 권한 ${user.canEdit ? "있음" : "없음"}, 출력 권한 ${user.canExport ? "있음" : "없음"}, 승인 권한 ${user.canApprove ? "있음" : "없음"}, 로그 열람 ${user.canViewAudit ? "가능" : "불가"}${scopeNotice}`;
   els.groupName.value = state.groupName;
   els.periodStart.value = state.periodStart;
@@ -1127,7 +1162,7 @@ function renderExpenses() {
     const share = expenseShare(expense);
     const needsApproval = expenseNeedsApproval(expense);
     const status = expenseStatus(expense);
-    const approvalReasonText = expenseApprovalReasons(expense).join(" · ") || "승인 조건 해당 없음";
+    const approvalReasonText = expenseApprovalReasons(expense).join(", ") || "승인 조건 해당 없음";
     const billableCount = billableParticipants(expense).length;
     const card = document.createElement("article");
     card.className = `compact-card ${needsApproval && status !== "승인 완료" ? "approval-card" : ""}`;
@@ -1136,7 +1171,7 @@ function renderExpenses() {
         <div>
           <span class="compact-date">${escapeHtml(expense.date)} ${escapeHtml(expense.transactionTime)}</span>
           <strong>${escapeHtml(expense.title)}</strong>
-          <span class="compact-sub">예상 ${billableCount}명 · ${escapeHtml(expenseStatus(expense))} · ${escapeHtml(approvalReasonText)} · ${escapeHtml(expense.recommendationNote)}</span>
+          <span class="compact-sub">예상 ${billableCount}명, ${escapeHtml(expenseStatus(expense))}, ${escapeHtml(approvalReasonText)}, ${escapeHtml(expense.recommendationNote)}</span>
         </div>
         <div class="compact-money">${currency.format(expense.amount)}</div>
         <div class="compact-money">1인 ${currency.format(share)}</div>
@@ -1182,7 +1217,7 @@ function renderExpenses() {
         <label class="exception-check">
           <span>특이 체크</span>
           <input type="checkbox" ${expense.isExceptional ? "checked" : ""} data-expense-field="isExceptional" data-id="${expense.id}" aria-label="특이 사항 여부">
-          <span>샐러드·식사 생략 등</span>
+          <span>샐러드, 식사 생략 등</span>
         </label>
         <label class="exception-note wide-field">비고(사유)
           <input value="${escapeHtml(expense.exceptionNote)}" data-expense-field="exceptionNote" data-id="${expense.id}" aria-label="특이 사항 사유" placeholder="예: Lia 샐러드 주문, Noa 식사 생략" ${expense.isExceptional ? "required" : "disabled"}>
@@ -1310,7 +1345,7 @@ function renderAuditLogs() {
   els.auditList.innerHTML = state.auditLogs.slice(0, 12).map((log) => `
     <div class="audit-row">
       <strong>${escapeHtml(log.action)}</strong>
-      <span>${escapeHtml(log.at)} · ${escapeHtml(log.actor)}</span>
+      <span>${escapeHtml(log.at)}, ${escapeHtml(log.actor)}</span>
       <p>${escapeHtml(log.detail)}</p>
     </div>
   `).join("");
@@ -1356,7 +1391,7 @@ function renderTotals() {
 
 function render() {
   normalizeState();
-  localStorage.setItem("foodFeeState", JSON.stringify(state));
+  persistState();
   if (isFoodOnlyUser()) {
     els.memberRows.innerHTML = "";
     els.revenueRows.innerHTML = "";
@@ -1574,7 +1609,9 @@ document.addEventListener("submit", (event) => {
 
   state.currentUserId = user.id;
   sessionStorage.setItem("foodFeeAuthUser", user.id);
-  addAudit("로그인", `${actorLabel(user)} 계정으로 로그인했습니다.`, user);
+  loadAssignedIdol(user);
+  const assignmentNote = user.assignedGroup ? ` 담당 아이돌 ${user.assignedGroupLabel || user.assignedGroup} 데이터를 자동 연동했습니다.` : "";
+  addAudit("로그인", `${actorLabel(user)} 계정으로 로그인했습니다.${assignmentNote}`, user);
   hideLogin();
   syncInputs();
   render();
@@ -1666,7 +1703,7 @@ document.addEventListener("change", (event) => {
     if (field === "participants") expense.recommendationNote = "직접 수정됨";
     if (["date", "transactionTime", "approvalStatus"].includes(field)) refreshAutomaticApprovalStatuses();
     if (field === "amount") {
-      const reason = expense.isExceptional ? ` · 특이 사유: ${expense.exceptionNote || "미입력"}` : "";
+      const reason = expense.isExceptional ? `, 특이 사유: ${expense.exceptionNote || "미입력"}` : "";
       addAudit("식비 금액 직접 수정", `${expense.date} ${expense.title}: ${currency.format(Number(previous || 0))} -> ${currency.format(expense.amount)}${reason}`);
     } else if (field === "isExceptional") {
       addAudit("식비 특이 체크", `${expense.date} ${expense.title}: ${expense.isExceptional ? "특이 사항으로 표시" : "특이 표시 해제 및 비고 삭제"}`);
@@ -1696,7 +1733,7 @@ document.addEventListener("change", (event) => {
     expense.approvalStatus = defaultApprovalStatus(expense);
     addAudit(
       "식사 생략 인원 수정",
-      `${expense.date} ${expense.title}: ${memberName} ${target.checked ? "식사 생략" : "식사 생략 해제"} · 정산 대상 ${billableParticipants(expense).length}명 · 1인 ${currency.format(expenseShare(expense))}`,
+      `${expense.date} ${expense.title}: ${memberName} ${target.checked ? "식사 생략" : "식사 생략 해제"}, 정산 대상 ${billableParticipants(expense).length}명, 1인 ${currency.format(expenseShare(expense))}`,
     );
     render();
   }
@@ -1719,7 +1756,7 @@ document.addEventListener("change", (event) => {
     expense.approvalStatus = defaultApprovalStatus(expense);
     addAudit(
       "별도 식사 인원 수정",
-      `${expense.date} ${expense.title}: ${memberName} ${target.checked ? "별도 식사로 배분 제외" : "별도 식사 해제"} · 정산 대상 ${billableParticipants(expense).length}명 · 1인 ${currency.format(expenseShare(expense))}`,
+      `${expense.date} ${expense.title}: ${memberName} ${target.checked ? "별도 식사로 배분 제외" : "별도 식사 해제"}, 정산 대상 ${billableParticipants(expense).length}명, 1인 ${currency.format(expenseShare(expense))}`,
     );
     render();
   }
@@ -1780,7 +1817,7 @@ document.addEventListener("click", (event) => {
   if (target.id === "logoutButton") {
     const user = authenticatedUser();
     if (user) addAudit("로그아웃", `${actorLabel(user)} 계정에서 로그아웃했습니다.`, user);
-    localStorage.setItem("foodFeeState", JSON.stringify(state));
+    persistState();
     sessionStorage.removeItem("foodFeeAuthUser");
     showLogin();
     return;
@@ -1791,14 +1828,14 @@ document.addEventListener("click", (event) => {
     if (!expense || !ensureApprovalPermission(`${expense?.title || "식비"} 승인`)) return;
     const user = currentUser();
     if (!hasAllPermissions(user)) {
-      addAudit("승인 차단", `${expense.title}: 입력·출력·승인 모든 권한을 가진 계정만 승인할 수 있습니다.`, user);
-      alert("입력·출력·승인 모든 권한을 가진 계정만 승인할 수 있습니다.");
+      addAudit("승인 차단", `${expense.title}: 입력, 출력, 승인 모든 권한을 가진 계정만 승인할 수 있습니다.`, user);
+      alert("입력, 출력, 승인 모든 권한을 가진 계정만 승인할 수 있습니다.");
       render();
       return;
     }
     expense.approvalStatus = "승인 완료";
     expense.approver = user.name;
-    addAudit("식비 승인", `${expense.date} ${expense.title}: ${currency.format(expense.amount)} · 1인 ${currency.format(expenseShare(expense))}`, user);
+    addAudit("식비 승인", `${expense.date} ${expense.title}: ${currency.format(expense.amount)}, 1인 ${currency.format(expenseShare(expense))}`, user);
     render();
     return;
   }
@@ -1933,6 +1970,7 @@ function boot() {
   const user = authenticatedUser();
   if (user) {
     state.currentUserId = user.id;
+    loadAssignedIdol(user);
     hideLogin();
     syncInputs();
     render();
