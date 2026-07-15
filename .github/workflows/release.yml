@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "릴리즈 버전, 예: v0.1.0"
+        required: true
+        default: "v0.1.0"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: release
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $tag = "${{ inputs.version }}"
+          } else {
+            $tag = "${{ github.ref_name }}"
+          }
+
+          if ($tag -notmatch '^v\d+\.\d+\.\d+([.-][0-9A-Za-z.-]+)?$') {
+            throw "Version must use a semantic tag such as v0.1.0."
+          }
+
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Create tag for manual release
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if (git ls-remote --exit-code --tags origin "refs/tags/$env:RELEASE_TAG") {
+            Write-Output "$env:RELEASE_TAG already exists."
+            git checkout $env:RELEASE_TAG
+          } else {
+            git tag -a $env:RELEASE_TAG -m "Sik-B $env:RELEASE_TAG"
+            git push origin $env:RELEASE_TAG
+          }
+
+      - name: Build release archives
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $artifacts = Join-Path $PWD "artifacts"
+          $webRoot = Join-Path $env:RUNNER_TEMP "Sik-B-$env:RELEASE_TAG-web"
+          $windowsRoot = Join-Path $env:RUNNER_TEMP "Sik-B-$env:RELEASE_TAG-windows"
+
+          New-Item -ItemType Directory -Force -Path $artifacts, $webRoot, $windowsRoot | Out-Null
+
+          $webFiles = @("index.html", "styles.css", "app.js", "README.md")
+          Copy-Item -LiteralPath $webFiles -Destination $webRoot
+          Copy-Item -LiteralPath "sample-data" -Destination $webRoot -Recurse
+
+          Copy-Item -Path (Join-Path $webRoot "*") -Destination $windowsRoot -Recurse
+          Copy-Item -LiteralPath "Sik-B.exe", "_start.bat" -Destination $windowsRoot
+
+          $webArchive = Join-Path $artifacts "Sik-B-$env:RELEASE_TAG-web.zip"
+          $windowsArchive = Join-Path $artifacts "Sik-B-$env:RELEASE_TAG-windows.zip"
+          Compress-Archive -Path (Join-Path $webRoot "*") -DestinationPath $webArchive -CompressionLevel Optimal
+          Compress-Archive -Path (Join-Path $windowsRoot "*") -DestinationPath $windowsArchive -CompressionLevel Optimal
+
+          Get-FileHash -Algorithm SHA256 $webArchive, $windowsArchive |
+            ForEach-Object { "$($_.Hash.ToLower())  $([IO.Path]::GetFileName($_.Path))" } |
+            Set-Content -LiteralPath (Join-Path $artifacts "SHA256SUMS.txt") -Encoding utf8
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @"
+          ## Sik-B Food-Fee 정산 PoC
+
+          - 역할별 식비 정산, 승인, 감사 로그
+          - 삼일돌, 삼데헌 더미데이터
+          - .xlsx Import, .xlsx Export
+          - web.zip: Windows, macOS, Linux 브라우저 실행용
+          - windows.zip: Sik-B.exe가 포함된 Windows 실행용
+
+          실제 운영 데이터가 아닌 기능 검증용 PoC입니다.
+          "@
+          $notes | Set-Content -LiteralPath "release-notes.md" -Encoding utf8
+          $assets = Get-ChildItem -LiteralPath "artifacts" -File | ForEach-Object { $_.FullName }
+
+          gh release view $env:RELEASE_TAG --repo "${{ github.repository }}" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release edit $env:RELEASE_TAG --repo "${{ github.repository }}" --title "Sik-B $env:RELEASE_TAG" --notes-file "release-notes.md"
+            gh release upload $env:RELEASE_TAG $assets --repo "${{ github.repository }}" --clobber
+          } else {
+            gh release create $env:RELEASE_TAG $assets --repo "${{ github.repository }}" --verify-tag --title "Sik-B $env:RELEASE_TAG" --notes-file "release-notes.md"
+          }
