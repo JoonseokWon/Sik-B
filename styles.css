@@ -110,6 +110,15 @@ button:hover {
   background: var(--brand-dark);
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+button:disabled:hover {
+  background: var(--brand);
+}
+
 button.ghost {
   background: #e9eef1;
   color: var(--ink);
@@ -763,6 +772,70 @@ td select {
   font-weight: 700;
 }
 
+.integration-panel {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.integration-panel p {
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.permission-badge {
+  align-self: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #e7f2ee;
+  color: var(--ok);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#externalExcelInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.integration-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.integration-grid article {
+  display: grid;
+  grid-template-rows: auto minmax(42px, auto) auto auto;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #f8fbfc;
+}
+
+.integration-grid strong {
+  font-size: 15px;
+}
+
+.integration-grid span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.integration-grid b {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #e7f2ee;
+  color: var(--ok);
+  font-size: 12px;
+}
+
 @media (max-width: 980px) {
   .app-shell {
     padding: 18px;
@@ -777,7 +850,8 @@ td select {
 
   .summary-strip,
   .workspace,
-  .lower-grid {
+  .lower-grid,
+  .integration-grid {
     grid-template-columns: 1fr;
   }
 

@@ -32,6 +32,7 @@
         </div>
         <div class="actions">
           <button id="exportButton" type="button">Excel 내보내기</button>
+          <button id="importIdolButton" type="button">다른 아이돌 연동</button>
           <button id="resetButton" type="button" class="ghost" data-settlement-sensitive>초기화</button>
         </div>
       </section>
@@ -194,6 +195,37 @@
         </section>
       </section>
 
+      <section id="integrationPanel" class="panel integration-panel" data-settlement-sensitive>
+        <div class="panel-header">
+          <div>
+            <h2>Excel 데이터 연동</h2>
+            <p>각 항목의 샘플 Excel을 선택해 현재 아이돌의 활동 기록, 일정, 식비 결제 데이터를 갱신합니다.</p>
+          </div>
+          <span class="permission-badge">인사 마스터 전용</span>
+        </div>
+        <div class="integration-grid">
+          <article>
+            <strong>회사 출입 기록</strong>
+            <span>활동기록 시트의 회사 입출 기록을 반영합니다.</span>
+            <b id="attendanceIntegrationStatus">Excel 선택 필요</b>
+            <button type="button" data-integration-import="attendance">출입 기록 연동</button>
+          </article>
+          <article>
+            <strong>그룹 캘린더</strong>
+            <span>일정표와 그룹 캘린더 활동 상태를 반영합니다.</span>
+            <b id="scheduleIntegrationStatus">Excel 선택 필요</b>
+            <button type="button" data-integration-import="schedule">일정 연동</button>
+          </article>
+          <article>
+            <strong>법인카드, 배달 결제</strong>
+            <span>결제내역 또는 아이돌별 식사 시트를 식비에 반영합니다.</span>
+            <b id="expenseIntegrationStatus">Excel 선택 필요</b>
+            <button type="button" data-integration-import="expense">식비 결제 연동</button>
+          </article>
+        </div>
+        <input id="externalExcelInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      </section>
+
       <section id="auditPanel" class="panel audit-panel">
         <div class="panel-header">
           <h2>감사 로그</h2>
@@ -202,6 +234,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=20260715-remove-integration-ui"></script>
+    <script src="app.js?v=20260715-role-integration-controls"></script>
   </body>
 </html>
