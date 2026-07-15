@@ -339,31 +339,66 @@ function xlsxColumnIndex(ref) {
   return [...letters].reduce((sum, letter) => sum * 26 + letter.charCodeAt(0) - 64, 0) - 1;
 }
 
-async function readActivityWorkbook(file) {
-  const xmlFiles = await unzipWorkbook(await file.arrayBuffer());
-  const parser = new DOMParser();
-  const sharedDoc = parser.parseFromString(xmlFiles.get("xl/sharedStrings.xml") || "<sst/>", "application/xml");
-  const sharedStrings = [...sharedDoc.querySelectorAll("si")].map((node) => [...node.querySelectorAll("t")].map((text) => text.textContent).join(""));
-  const sheetXml = xmlFiles.get("xl/worksheets/sheet1.xml");
-  if (!sheetXml) throw new Error("첫 번째 시트를 찾을 수 없습니다.");
+function xlsxWorksheetPath(xmlFiles, parser, sheetName) {
+  const workbookXml = xmlFiles.get("xl/workbook.xml");
+  const relationshipsXml = xmlFiles.get("xl/_rels/workbook.xml.rels");
+  if (!workbookXml || !relationshipsXml) return "";
+  const workbookDoc = parser.parseFromString(workbookXml, "application/xml");
+  const sheet = [...workbookDoc.querySelectorAll("sheet")].find((item) => item.getAttribute("name") === sheetName);
+  if (!sheet) return "";
+  const relationshipId = sheet.getAttribute("r:id") || sheet.getAttribute("id");
+  const relationshipsDoc = parser.parseFromString(relationshipsXml, "application/xml");
+  const relationship = [...relationshipsDoc.querySelectorAll("Relationship")].find((item) => item.getAttribute("Id") === relationshipId);
+  const target = relationship?.getAttribute("Target") || "";
+  if (!target) return "";
+  if (target.startsWith("/")) return target.slice(1);
+  return target.startsWith("xl/") ? target : `xl/${target}`;
+}
+
+function xlsxRows(xmlFiles, parser, sharedStrings, sheetPath) {
+  const sheetXml = xmlFiles.get(sheetPath);
+  if (!sheetXml) return [];
   const sheetDoc = parser.parseFromString(sheetXml, "application/xml");
-  const rows = [...sheetDoc.querySelectorAll("sheetData row")].map((row) => {
+  return [...sheetDoc.querySelectorAll("sheetData row")].map((row) => {
     const values = [];
     [...row.querySelectorAll("c")].forEach((cell) => {
       values[xlsxColumnIndex(cell.getAttribute("r"))] = xlsxCellValue(cell, sharedStrings);
     });
     return values.map((value) => String(value || "").trim());
   }).filter((row) => row.some(Boolean));
-  const headers = (rows.shift() || []).map((header) => header.replace(/\s/g, ""));
-  const dateIndex = headers.findIndex((header) => header === "날짜" || header.toLowerCase() === "date");
-  const memberIndex = headers.findIndex((header) => header === "멤버" || header.toLowerCase() === "member");
-  const statusIndex = headers.findIndex((header) => header === "상태" || header.toLowerCase() === "status");
+}
+
+async function readActivityWorkbook(file) {
+  const xmlFiles = await unzipWorkbook(await file.arrayBuffer());
+  const parser = new DOMParser();
+  const sharedDoc = parser.parseFromString(xmlFiles.get("xl/sharedStrings.xml") || "<sst/>", "application/xml");
+  const sharedStrings = [...sharedDoc.querySelectorAll("si")].map((node) => [...node.querySelectorAll("t")].map((text) => text.textContent).join(""));
+  const activityPath = xlsxWorksheetPath(xmlFiles, parser, "활동기록") || "xl/worksheets/sheet1.xml";
+  const activityRows = xlsxRows(xmlFiles, parser, sharedStrings, activityPath);
+  const activityHeaders = (activityRows.shift() || []).map((header) => header.replace(/\s/g, ""));
+  const dateIndex = activityHeaders.findIndex((header) => header === "날짜" || header.toLowerCase() === "date");
+  const memberIndex = activityHeaders.findIndex((header) => header === "멤버" || header.toLowerCase() === "member");
+  const statusIndex = activityHeaders.findIndex((header) => header === "상태" || header.toLowerCase() === "status");
   if (dateIndex < 0 || memberIndex < 0) throw new Error("활동 기록 시트에는 날짜, 멤버 컬럼이 필요합니다.");
-  return rows.map((row) => ({
+  const attendance = activityRows.map((row) => ({
     date: /^\d+(\.\d+)?$/.test(row[dateIndex]) ? excelSerialDate(row[dateIndex]) : row[dateIndex],
     member: row[memberIndex],
     status: row[statusIndex] || "출근",
   })).filter((row) => row.date && row.member);
+
+  const schedulePath = xlsxWorksheetPath(xmlFiles, parser, "일정표");
+  const scheduleRows = schedulePath ? xlsxRows(xmlFiles, parser, sharedStrings, schedulePath) : [];
+  const scheduleHeaders = (scheduleRows.shift() || []).map((header) => header.replace(/\s/g, ""));
+  const scheduleDateIndex = scheduleHeaders.findIndex((header) => header === "날짜" || header.toLowerCase() === "date");
+  const titleIndex = scheduleHeaders.findIndex((header) => ["일정명", "일정", "title"].includes(header.toLowerCase()));
+  const membersIndex = scheduleHeaders.findIndex((header) => ["참여멤버", "멤버", "members"].includes(header.toLowerCase()));
+  const schedules = scheduleDateIndex < 0 || titleIndex < 0 || membersIndex < 0 ? [] : scheduleRows.map((row) => ({
+    date: /^\d+(\.\d+)?$/.test(row[scheduleDateIndex]) ? excelSerialDate(row[scheduleDateIndex]) : row[scheduleDateIndex],
+    title: row[titleIndex],
+    members: splitNames(row[membersIndex]),
+  })).filter((row) => row.date && row.title && row.members.length);
+
+  return { attendance, schedules };
 }
 
 function columnName(index) {
@@ -913,13 +948,19 @@ function syncExternalSources() {
 async function importActivityWorkbook(file) {
   if (!file) return;
   try {
-    const rows = await readActivityWorkbook(file);
-    if (!rows.length) throw new Error("가져올 활동 기록이 없습니다.");
-    const dates = new Set(rows.map((row) => row.date));
-    state.attendance = state.attendance.filter((row) => !dates.has(row.date));
-    state.attendance.push(...rows.map((row) => ({ id: makeId(), ...row })));
+    const { attendance, schedules } = await readActivityWorkbook(file);
+    if (!attendance.length) throw new Error("가져올 활동 기록이 없습니다.");
+    const attendanceDates = new Set(attendance.map((row) => row.date));
+    state.attendance = state.attendance.filter((row) => !attendanceDates.has(row.date));
+    state.attendance.push(...attendance.map((row) => ({ id: makeId(), ...row })));
+    if (schedules.length) {
+      const scheduleDates = new Set(schedules.map((row) => row.date));
+      state.schedules = state.schedules.filter((row) => !scheduleDates.has(row.date));
+      state.schedules.push(...schedules.map((row) => ({ id: makeId(), ...row })));
+    }
     state.expenses.forEach(syncExpenseRecommendation);
-    addAudit("외부 엑셀 가져오기", `${file.name}에서 활동 기록 ${rows.length}건을 가져와 예상 식사인원을 다시 계산했습니다.`);
+    const scheduleSummary = schedules.length ? `, 일정 ${schedules.length}건` : "";
+    addAudit("외부 엑셀 가져오기", `${file.name}에서 활동 기록 ${attendance.length}건${scheduleSummary}을 가져와 예상 식사인원을 다시 계산했습니다.`);
     render();
   } catch (error) {
     addAudit("외부 엑셀 가져오기 실패", error.message || "알 수 없는 오류가 발생했습니다.");
