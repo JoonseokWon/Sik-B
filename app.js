@@ -11,9 +11,9 @@ const REVENUE_TYPES = ["공통 매출", "개인 매출"];
 const APPROVAL_STATES = ["자동 처리", "승인 대기", "승인 완료", "반려", "보류"];
 const ACTIVITY_STATES = ["출근", "대기", "외부일정", "제외"];
 const INTERNAL_USERS = [
-  { id: "FIN-1024", name: "정산 담당자", role: "정산 담당자", canEdit: true, canExport: true, canApprove: false },
-  { id: "MGR-2201", name: "상위 매니저", role: "승인권자", canEdit: false, canExport: true, canApprove: true },
-  { id: "HR-3007", name: "인사 마스터", role: "내부 데이터 관리자", canEdit: true, canExport: false, canApprove: true },
+  { id: "FIN-1024", name: "정산 담당자", role: "정산 담당자", password: "1024", canEdit: true, canExport: true, canApprove: false },
+  { id: "MGR-2201", name: "상위 매니저", role: "승인권자", password: "2201", canEdit: false, canExport: true, canApprove: true },
+  { id: "HR-3007", name: "인사 마스터", role: "내부 데이터 관리자", password: "3007", canEdit: true, canExport: false, canApprove: true },
 ];
 
 const state = {
@@ -38,8 +38,14 @@ const state = {
 };
 
 const els = {
+  loginOverlay: document.querySelector("#loginOverlay"),
+  loginForm: document.querySelector("#loginForm"),
+  loginUserId: document.querySelector("#loginUserId"),
+  loginPassword: document.querySelector("#loginPassword"),
+  loginError: document.querySelector("#loginError"),
   groupName: document.querySelector("#groupName"),
   currentUser: document.querySelector("#currentUser"),
+  logoutButton: document.querySelector("#logoutButton"),
   authNotice: document.querySelector("#authNotice"),
   periodStart: document.querySelector("#periodStart"),
   periodEnd: document.querySelector("#periodEnd"),
@@ -91,7 +97,36 @@ function formatTime(date = new Date()) {
 }
 
 function currentUser() {
-  return INTERNAL_USERS.find((user) => user.id === state.currentUserId) || INTERNAL_USERS[0];
+  return authenticatedUser() || INTERNAL_USERS.find((user) => user.id === state.currentUserId) || INTERNAL_USERS[0];
+}
+
+function authenticatedUser() {
+  const userId = sessionStorage.getItem("foodFeeAuthUser");
+  return INTERNAL_USERS.find((user) => user.id === userId) || null;
+}
+
+function isAuthenticated() {
+  return Boolean(authenticatedUser());
+}
+
+function showLogin(message = "") {
+  els.loginUserId.innerHTML = INTERNAL_USERS.map((user) => `<option value="${user.id}">${user.id} · ${user.name}</option>`).join("");
+  els.loginUserId.value = state.currentUserId || INTERNAL_USERS[0].id;
+  els.loginPassword.value = "";
+  els.loginError.textContent = message;
+  els.loginOverlay.classList.remove("hidden");
+  setTimeout(() => els.loginPassword.focus(), 0);
+}
+
+function hideLogin() {
+  els.loginOverlay.classList.add("hidden");
+  els.loginError.textContent = "";
+}
+
+function ensureAuthenticated() {
+  if (isAuthenticated()) return true;
+  showLogin("로그인이 필요합니다.");
+  return false;
 }
 
 function actorLabel(user = currentUser()) {
@@ -112,6 +147,7 @@ function addAudit(action, detail, user = currentUser()) {
 }
 
 function ensureEditPermission(action) {
+  if (!ensureAuthenticated()) return false;
   const user = currentUser();
   if (user.canEdit) return true;
   addAudit("입력 차단", `${action}: ${user.name} 계정은 입력 권한이 없습니다.`, user);
@@ -121,6 +157,7 @@ function ensureEditPermission(action) {
 }
 
 function ensureApprovalPermission(action) {
+  if (!ensureAuthenticated()) return false;
   const user = currentUser();
   if (user.canApprove) return true;
   addAudit("승인 차단", `${action}: ${user.name} 계정은 승인 권한이 없습니다.`, user);
@@ -1400,6 +1437,7 @@ function buildXlsxBytes() {
 }
 
 function exportWorkbook() {
+  if (!ensureAuthenticated()) return;
   const user = currentUser();
   if (!user.canExport) {
     addAudit("출력 차단", `${user.name} 계정은 Excel 출력 권한이 없습니다.`, user);
@@ -1428,25 +1466,33 @@ function exportWorkbook() {
   URL.revokeObjectURL(url);
 }
 
-document.addEventListener("input", (event) => {
-  const target = event.target;
-  if (target === els.currentUser) {
-    state.currentUserId = target.value;
-    addAudit("내부 계정 전환", `${actorLabel()} 계정으로 전환했습니다.`);
-    render();
+document.addEventListener("submit", (event) => {
+  if (event.target !== els.loginForm) return;
+  event.preventDefault();
+
+  const user = INTERNAL_USERS.find((item) => item.id === els.loginUserId.value);
+  if (!user || user.password !== els.loginPassword.value) {
+    els.loginError.textContent = "사번 또는 비밀번호가 올바르지 않습니다.";
+    els.loginPassword.focus();
+    els.loginPassword.select();
     return;
   }
+
+  state.currentUserId = user.id;
+  sessionStorage.setItem("foodFeeAuthUser", user.id);
+  addAudit("로그인", `${actorLabel(user)} 계정으로 로그인했습니다.`, user);
+  hideLogin();
+  syncInputs();
+  render();
+});
+
+document.addEventListener("input", (event) => {
+  const target = event.target;
   if ([els.groupName, els.periodStart, els.periodEnd, els.approvalLimit, els.concurrentApprovalCount].includes(target)) updateSettings();
 });
 
 document.addEventListener("change", (event) => {
   const target = event.target;
-  if (target === els.currentUser) {
-    state.currentUserId = target.value;
-    addAudit("내부 계정 전환", `${actorLabel()} 계정으로 전환했습니다.`);
-    render();
-    return;
-  }
   if (target.dataset.field) {
     if (!ensureEditPermission("멤버 정보 수정")) return;
     const member = state.members.find((item) => item.id === target.dataset.id);
@@ -1631,6 +1677,14 @@ document.addEventListener("change", (event) => {
 
 document.addEventListener("click", (event) => {
   const target = event.target;
+  if (target.id === "logoutButton") {
+    const user = authenticatedUser();
+    if (user) addAudit("로그아웃", `${actorLabel(user)} 계정에서 로그아웃했습니다.`, user);
+    localStorage.setItem("foodFeeState", JSON.stringify(state));
+    sessionStorage.removeItem("foodFeeAuthUser");
+    showLogin();
+    return;
+  }
   if (target.id === "exportButton") exportWorkbook();
   if (target.id === "importIdolButton") {
     if (!ensureEditPermission("다른 아이돌 연동")) return;
@@ -1748,14 +1802,24 @@ function boot() {
     const parsed = JSON.parse(saved);
     if (parsed.version !== DATA_VERSION) {
       seedData();
-      return;
+    } else {
+      Object.assign(state, parsed);
+      normalizeState();
+      syncInputs();
+      render();
     }
-    Object.assign(state, parsed);
-    normalizeState();
+  } else {
+    seedData();
+  }
+
+  const user = authenticatedUser();
+  if (user) {
+    state.currentUserId = user.id;
+    hideLogin();
     syncInputs();
     render();
   } else {
-    seedData();
+    showLogin();
   }
 }
 

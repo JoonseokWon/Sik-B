@@ -4,9 +4,26 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Food-Fee 정산 툴</title>
-    <link rel="stylesheet" href="styles.css?v=20260715-layout-fix">
+    <link rel="stylesheet" href="styles.css?v=20260715-login">
   </head>
   <body>
+    <div id="loginOverlay" class="login-overlay" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+      <form id="loginForm" class="login-card">
+        <p class="eyebrow">Internal Account</p>
+        <h2 id="loginTitle">Food-Fee 로그인</h2>
+        <label>
+          사번
+          <select id="loginUserId" required></select>
+        </label>
+        <label>
+          비밀번호
+          <input id="loginPassword" type="password" inputmode="numeric" autocomplete="current-password" required aria-describedby="loginHint loginError">
+        </label>
+        <p id="loginHint" class="login-hint">PoC 비밀번호는 각 사번의 마지막 4자리입니다.</p>
+        <p id="loginError" class="login-error" aria-live="polite"></p>
+        <button type="submit">로그인</button>
+      </form>
+    </div>
     <main class="app-shell">
       <section class="topbar">
         <div>
@@ -60,8 +77,9 @@
           <h2>정산 조건</h2>
           <label>
             내부 계정
-            <select id="currentUser"></select>
+            <select id="currentUser" disabled></select>
           </label>
+          <button id="logoutButton" type="button" class="ghost">로그아웃</button>
           <div id="authNotice" class="note auth-note"></div>
           <label>
             그룹명
@@ -216,6 +234,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=20260715-single-idol-link"></script>
+    <script src="app.js?v=20260715-login"></script>
   </body>
 </html>
