@@ -54,7 +54,6 @@ const els = {
   scheduleList: document.querySelector("#scheduleList"),
   auditList: document.querySelector("#auditList"),
   contractDetail: document.querySelector("#contractDetail"),
-  importIdolButton: document.querySelector("#importIdolButton"),
   syncExternalButton: document.querySelector("#syncExternalButton"),
   externalExcelInput: document.querySelector("#externalExcelInput"),
   totalRevenue: document.querySelector("#totalRevenue"),
@@ -823,7 +822,7 @@ function seedOtherIdolData() {
   ];
   state.marketingInitialized = true;
   state.auditLogs = [];
-  addAudit("다른 아이돌 더미 연동", "삼데헌 멤버 4명, 매출, 활동 기록, 일정, 식비, 마케팅 급여 데이터를 불러왔습니다.");
+  addAudit("다른 아이돌 연동", "삼데헌 멤버 4명, 매출, 활동 기록, 일정, 식비, 마케팅 급여 데이터를 불러왔습니다.");
   syncInputs();
   render();
 }
@@ -867,11 +866,6 @@ async function importActivityWorkbook(file) {
     alert(`엑셀 가져오기에 실패했습니다.\n${error.message || "파일 형식을 확인해 주세요."}`);
     render();
   }
-}
-
-function openExternalFilePicker() {
-  if (!ensureEditPermission("다른 아이돌 연동")) return;
-  els.externalExcelInput?.click();
 }
 
 function normalizeState() {
@@ -1638,11 +1632,10 @@ document.addEventListener("change", (event) => {
 document.addEventListener("click", (event) => {
   const target = event.target;
   if (target.id === "exportButton") exportWorkbook();
-  if (target.id === "otherDummyButton") {
-    if (!ensureEditPermission("다른 아이돌 더미 연동")) return;
+  if (target.id === "importIdolButton") {
+    if (!ensureEditPermission("다른 아이돌 연동")) return;
     seedOtherIdolData();
   }
-  if (target.id === "importIdolButton") openExternalFilePicker();
   if (target.id === "resetButton") {
     localStorage.removeItem("foodFeeState");
     seedData();
