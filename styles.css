@@ -16,6 +16,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -109,6 +113,10 @@ button:hover {
 button.ghost {
   background: #e9eef1;
   color: var(--ink);
+}
+
+button.approve-button {
+  background: var(--ok);
 }
 
 button.small {
