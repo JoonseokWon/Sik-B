@@ -45,7 +45,6 @@ const els = {
   loginPassword: document.querySelector("#loginPassword"),
   loginError: document.querySelector("#loginError"),
   exportButton: document.querySelector("#exportButton"),
-  importIdolButton: document.querySelector("#importIdolButton"),
   resetButton: document.querySelector("#resetButton"),
   groupName: document.querySelector("#groupName"),
   currentUser: document.querySelector("#currentUser"),
@@ -65,8 +64,6 @@ const els = {
   auditList: document.querySelector("#auditList"),
   auditPanel: document.querySelector("#auditPanel"),
   contractDetail: document.querySelector("#contractDetail"),
-  syncExternalButton: document.querySelector("#syncExternalButton"),
-  externalExcelInput: document.querySelector("#externalExcelInput"),
   totalRevenue: document.querySelector("#totalRevenue"),
   totalCommonRevenue: document.querySelector("#totalCommonRevenue"),
   companyShare: document.querySelector("#companyShare"),
@@ -304,136 +301,6 @@ function makeZip(files) {
   ]);
 
   return concatBytes([...localParts, centralDirectory, endRecord]);
-}
-
-function readU16(data, offset) {
-  return data[offset] | (data[offset + 1] << 8);
-}
-
-function readU32(data, offset) {
-  return (data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24)) >>> 0;
-}
-
-async function inflateRaw(bytes) {
-  if (!("DecompressionStream" in window)) throw new Error("현재 브라우저는 XLSX 압축 해제를 지원하지 않습니다.");
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
-}
-
-async function unzipWorkbook(buffer) {
-  const data = new Uint8Array(buffer);
-  let eocd = -1;
-  for (let offset = data.length - 22; offset >= 0; offset -= 1) {
-    if (readU32(data, offset) === 0x06054b50) {
-      eocd = offset;
-      break;
-    }
-  }
-  if (eocd < 0) throw new Error("엑셀 파일 구조를 찾을 수 없습니다.");
-  const fileCount = readU16(data, eocd + 10);
-  let cursor = readU32(data, eocd + 16);
-  const files = new Map();
-  const decoder = new TextDecoder("utf-8");
-  for (let index = 0; index < fileCount; index += 1) {
-    if (readU32(data, cursor) !== 0x02014b50) throw new Error("엑셀 중앙 디렉터리를 읽을 수 없습니다.");
-    const method = readU16(data, cursor + 10);
-    const compressedSize = readU32(data, cursor + 20);
-    const nameLength = readU16(data, cursor + 28);
-    const extraLength = readU16(data, cursor + 30);
-    const commentLength = readU16(data, cursor + 32);
-    const localOffset = readU32(data, cursor + 42);
-    const name = decoder.decode(data.slice(cursor + 46, cursor + 46 + nameLength));
-    const localNameLength = readU16(data, localOffset + 26);
-    const localExtraLength = readU16(data, localOffset + 28);
-    const start = localOffset + 30 + localNameLength + localExtraLength;
-    const compressed = data.slice(start, start + compressedSize);
-    const content = method === 0 ? compressed : await inflateRaw(compressed);
-    files.set(name, decoder.decode(content));
-    cursor += 46 + nameLength + extraLength + commentLength;
-  }
-  return files;
-}
-
-function excelSerialDate(value) {
-  const serial = Number(value);
-  if (!Number.isFinite(serial)) return String(value || "");
-  const utc = Math.round((serial - 25569) * 86400 * 1000);
-  return new Date(utc).toISOString().slice(0, 10);
-}
-
-function xlsxCellValue(cell, sharedStrings) {
-  const type = cell.getAttribute("t");
-  if (type === "inlineStr") return cell.querySelector("is t")?.textContent || "";
-  const raw = cell.querySelector("v")?.textContent || "";
-  if (type === "s") return sharedStrings[Number(raw)] || "";
-  return raw;
-}
-
-function xlsxColumnIndex(ref) {
-  const letters = String(ref || "").replace(/\d/g, "");
-  return [...letters].reduce((sum, letter) => sum * 26 + letter.charCodeAt(0) - 64, 0) - 1;
-}
-
-function xlsxWorksheetPath(xmlFiles, parser, sheetName) {
-  const workbookXml = xmlFiles.get("xl/workbook.xml");
-  const relationshipsXml = xmlFiles.get("xl/_rels/workbook.xml.rels");
-  if (!workbookXml || !relationshipsXml) return "";
-  const workbookDoc = parser.parseFromString(workbookXml, "application/xml");
-  const sheet = [...workbookDoc.querySelectorAll("sheet")].find((item) => item.getAttribute("name") === sheetName);
-  if (!sheet) return "";
-  const relationshipId = sheet.getAttribute("r:id") || sheet.getAttribute("id");
-  const relationshipsDoc = parser.parseFromString(relationshipsXml, "application/xml");
-  const relationship = [...relationshipsDoc.querySelectorAll("Relationship")].find((item) => item.getAttribute("Id") === relationshipId);
-  const target = relationship?.getAttribute("Target") || "";
-  if (!target) return "";
-  if (target.startsWith("/")) return target.slice(1);
-  return target.startsWith("xl/") ? target : `xl/${target}`;
-}
-
-function xlsxRows(xmlFiles, parser, sharedStrings, sheetPath) {
-  const sheetXml = xmlFiles.get(sheetPath);
-  if (!sheetXml) return [];
-  const sheetDoc = parser.parseFromString(sheetXml, "application/xml");
-  return [...sheetDoc.querySelectorAll("sheetData row")].map((row) => {
-    const values = [];
-    [...row.querySelectorAll("c")].forEach((cell) => {
-      values[xlsxColumnIndex(cell.getAttribute("r"))] = xlsxCellValue(cell, sharedStrings);
-    });
-    return values.map((value) => String(value || "").trim());
-  }).filter((row) => row.some(Boolean));
-}
-
-async function readActivityWorkbook(file) {
-  const xmlFiles = await unzipWorkbook(await file.arrayBuffer());
-  const parser = new DOMParser();
-  const sharedDoc = parser.parseFromString(xmlFiles.get("xl/sharedStrings.xml") || "<sst/>", "application/xml");
-  const sharedStrings = [...sharedDoc.querySelectorAll("si")].map((node) => [...node.querySelectorAll("t")].map((text) => text.textContent).join(""));
-  const activityPath = xlsxWorksheetPath(xmlFiles, parser, "활동기록") || "xl/worksheets/sheet1.xml";
-  const activityRows = xlsxRows(xmlFiles, parser, sharedStrings, activityPath);
-  const activityHeaders = (activityRows.shift() || []).map((header) => header.replace(/\s/g, ""));
-  const dateIndex = activityHeaders.findIndex((header) => header === "날짜" || header.toLowerCase() === "date");
-  const memberIndex = activityHeaders.findIndex((header) => header === "멤버" || header.toLowerCase() === "member");
-  const statusIndex = activityHeaders.findIndex((header) => header === "상태" || header.toLowerCase() === "status");
-  if (dateIndex < 0 || memberIndex < 0) throw new Error("활동 기록 시트에는 날짜, 멤버 컬럼이 필요합니다.");
-  const attendance = activityRows.map((row) => ({
-    date: /^\d+(\.\d+)?$/.test(row[dateIndex]) ? excelSerialDate(row[dateIndex]) : row[dateIndex],
-    member: row[memberIndex],
-    status: row[statusIndex] || "출근",
-  })).filter((row) => row.date && row.member);
-
-  const schedulePath = xlsxWorksheetPath(xmlFiles, parser, "일정표");
-  const scheduleRows = schedulePath ? xlsxRows(xmlFiles, parser, sharedStrings, schedulePath) : [];
-  const scheduleHeaders = (scheduleRows.shift() || []).map((header) => header.replace(/\s/g, ""));
-  const scheduleDateIndex = scheduleHeaders.findIndex((header) => header === "날짜" || header.toLowerCase() === "date");
-  const titleIndex = scheduleHeaders.findIndex((header) => ["일정명", "일정", "title"].includes(header.toLowerCase()));
-  const membersIndex = scheduleHeaders.findIndex((header) => ["참여멤버", "멤버", "members"].includes(header.toLowerCase()));
-  const schedules = scheduleDateIndex < 0 || titleIndex < 0 || membersIndex < 0 ? [] : scheduleRows.map((row) => ({
-    date: /^\d+(\.\d+)?$/.test(row[scheduleDateIndex]) ? excelSerialDate(row[scheduleDateIndex]) : row[scheduleDateIndex],
-    title: row[titleIndex],
-    members: splitNames(row[membersIndex]),
-  })).filter((row) => row.date && row.title && row.members.length);
-
-  return { attendance, schedules };
 }
 
 function columnName(index) {
@@ -887,7 +754,7 @@ function seedData() {
   state.marketingPayroll = defaultMarketingPayroll();
   state.marketingInitialized = true;
   state.auditLogs = [
-    { id: makeId(), at: "2026-07-08 09:00", actor: "정산 담당자", action: "더미 연동", detail: "Samildol 활동 기록, 일정표, 매출 항목, 식비 결제 건, 마케팅 사업부 급여와 아이돌별 투입시간을 불러왔습니다." },
+    { id: makeId(), at: "2026-07-08 09:00", actor: "정산 담당자", action: "더미 데이터 준비", detail: "Samildol 활동 기록, 일정표, 매출 항목, 식비 결제 건, 마케팅 사업부 급여와 아이돌별 투입시간을 불러왔습니다." },
   ];
   syncInputs();
   render();
@@ -952,56 +819,9 @@ function seedOtherIdolData() {
   ];
   state.marketingInitialized = true;
   state.auditLogs = [];
-  addAudit("다른 아이돌 연동", "삼데헌 멤버 4명, 매출, 활동 기록, 일정, 식비, 마케팅 급여 데이터를 불러왔습니다.");
+  addAudit("담당 아이돌 데이터 준비", "삼데헌 멤버 4명, 매출, 활동 기록, 일정, 식비, 마케팅 급여 데이터를 불러왔습니다.");
   syncInputs();
   render();
-}
-
-function syncExternalSources() {
-  const attendanceRows = [
-    ["2026-07-01", "Haru", "출근"], ["2026-07-01", "Min", "출근"], ["2026-07-01", "Seo", "출근"], ["2026-07-01", "Lia", "출근"],
-    ["2026-07-03", "Haru", "외부일정"], ["2026-07-03", "Min", "외부일정"], ["2026-07-03", "Seo", "외부일정"], ["2026-07-03", "Lia", "외부일정"], ["2026-07-03", "Noa", "외부일정"],
-    ["2026-07-06", "Min", "출근"], ["2026-07-06", "Seo", "출근"],
-    ["2026-07-09", "Haru", "외부일정"], ["2026-07-09", "Lia", "외부일정"], ["2026-07-09", "Noa", "외부일정"],
-    ["2026-07-10", "Haru", "외부일정"], ["2026-07-10", "Min", "외부일정"], ["2026-07-10", "Seo", "외부일정"], ["2026-07-10", "Lia", "외부일정"], ["2026-07-10", "Noa", "외부일정"],
-  ];
-  const schedules = [
-    { date: "2026-07-01", title: "컴백 안무 연습", members: ["Haru", "Min", "Seo", "Lia"] },
-    { date: "2026-07-03", title: "음악 방송 사전녹화", members: ["Haru", "Min", "Seo", "Lia", "Noa"] },
-    { date: "2026-07-06", title: "라디오 게스트", members: ["Min", "Seo"] },
-    { date: "2026-07-09", title: "안무 수정 리허설", members: ["Haru", "Lia", "Noa"] },
-    { date: "2026-07-10", title: "콘서트 리허설", members: ["Haru", "Min", "Seo", "Lia", "Noa"] },
-  ];
-  state.attendance = state.attendance.filter((row) => row.date < state.periodStart || row.date > state.periodEnd);
-  state.attendance.push(...attendanceRows.map(([date, member, status]) => ({ id: makeId(), date, member, status })));
-  state.schedules = state.schedules.filter((row) => row.date < state.periodStart || row.date > state.periodEnd);
-  state.schedules.push(...schedules.map((row) => ({ id: makeId(), ...row })));
-  state.expenses.forEach(syncExpenseRecommendation);
-  addAudit("외부 데이터 동기화", "회사 입출 기록, 그룹 캘린더, 결제 내역 더미 커넥터로 활동 기록과 예상 식사인원을 갱신했습니다.");
-}
-
-async function importActivityWorkbook(file) {
-  if (!file) return;
-  try {
-    const { attendance, schedules } = await readActivityWorkbook(file);
-    if (!attendance.length) throw new Error("가져올 활동 기록이 없습니다.");
-    const attendanceDates = new Set(attendance.map((row) => row.date));
-    state.attendance = state.attendance.filter((row) => !attendanceDates.has(row.date));
-    state.attendance.push(...attendance.map((row) => ({ id: makeId(), ...row })));
-    if (schedules.length) {
-      const scheduleDates = new Set(schedules.map((row) => row.date));
-      state.schedules = state.schedules.filter((row) => !scheduleDates.has(row.date));
-      state.schedules.push(...schedules.map((row) => ({ id: makeId(), ...row })));
-    }
-    state.expenses.forEach(syncExpenseRecommendation);
-    const scheduleSummary = schedules.length ? `, 일정 ${schedules.length}건` : "";
-    addAudit("외부 엑셀 가져오기", `${file.name}에서 활동 기록 ${attendance.length}건${scheduleSummary}을 가져와 예상 식사인원을 다시 계산했습니다.`);
-    render();
-  } catch (error) {
-    addAudit("외부 엑셀 가져오기 실패", error.message || "알 수 없는 오류가 발생했습니다.");
-    alert(`엑셀 가져오기에 실패했습니다.\n${error.message || "파일 형식을 확인해 주세요."}`);
-    render();
-  }
 }
 
 function normalizeState() {
@@ -1801,15 +1621,6 @@ document.addEventListener("change", (event) => {
     addAudit("일정표 수정", `${row.title} ${target.dataset.scheduleField}: ${previous} -> ${row[target.dataset.scheduleField]}`);
     render();
   }
-  if (target === els.externalExcelInput) {
-    if (!ensureEditPermission("외부 엑셀 가져오기")) {
-      target.value = "";
-      return;
-    }
-    importActivityWorkbook(target.files?.[0]).finally(() => {
-      target.value = "";
-    });
-  }
 });
 
 document.addEventListener("click", (event) => {
@@ -1838,10 +1649,6 @@ document.addEventListener("click", (event) => {
     addAudit("식비 승인", `${expense.date} ${expense.title}: ${currency.format(expense.amount)}, 1인 ${currency.format(expenseShare(expense))}`, user);
     render();
     return;
-  }
-  if (target.id === "importIdolButton") {
-    if (!ensureGeneralEditPermission("다른 아이돌 연동")) return;
-    seedOtherIdolData();
   }
   if (target.id === "resetButton") {
     if (!ensureGeneralEditPermission("전체 데이터 초기화")) return;
@@ -1894,11 +1701,6 @@ document.addEventListener("click", (event) => {
     const member = state.members.find((item) => item.role === "멤버")?.name || "New";
     state.schedules.push({ id: makeId(), date: state.periodStart, title: "새 일정", members: [member] });
     addAudit("일정 추가", "새 일정을 추가했습니다.");
-    render();
-  }
-  if (target.id === "syncExternalButton") {
-    if (!ensureEditPermission("외부 데이터 동기화")) return;
-    syncExternalSources();
     render();
   }
   if (target.dataset.recommendExpense) {

@@ -32,7 +32,6 @@
         </div>
         <div class="actions">
           <button id="exportButton" type="button">Excel 내보내기</button>
-          <button id="importIdolButton" type="button" data-settlement-sensitive>다른 아이돌 연동</button>
           <button id="resetButton" type="button" class="ghost" data-settlement-sensitive>초기화</button>
         </div>
       </section>
@@ -195,37 +194,6 @@
         </section>
       </section>
 
-      <section class="panel integration-panel">
-        <div class="panel-header">
-          <div>
-            <h2>외부 데이터 연동</h2>
-            <p>회사 입출 기록, 그룹 캘린더, 결제 내역을 연결해 활동 기록과 예상 식사인원을 자동으로 갱신합니다.</p>
-          </div>
-          <div class="integration-actions">
-            <label class="file-button" for="externalExcelInput">외부 엑셀 가져오기</label>
-            <input id="externalExcelInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-            <button id="syncExternalButton" type="button">외부 데이터 동기화</button>
-          </div>
-        </div>
-        <div class="integration-grid">
-          <article>
-            <strong>회사 입출 기록</strong>
-            <span>출근/대기 상태 자동 반영</span>
-            <b>연결됨</b>
-          </article>
-          <article>
-            <strong>그룹 캘린더</strong>
-            <span>공연, 방송, 외부 행사 참여자 반영</span>
-            <b>연결됨</b>
-          </article>
-          <article>
-            <strong>법인카드/배달 결제</strong>
-            <span>식비 결제 건과 일정 참여자 매칭</span>
-            <b>파일 연동</b>
-          </article>
-        </div>
-      </section>
-
       <section id="auditPanel" class="panel audit-panel">
         <div class="panel-header">
           <h2>감사 로그</h2>
@@ -234,6 +202,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=20260715-account-idol-link"></script>
+    <script src="app.js?v=20260715-remove-integration-ui"></script>
   </body>
 </html>
