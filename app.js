@@ -774,42 +774,42 @@ function seedOtherIdolData() {
   state.companyRate = 50;
   state.members = [
     {
-      id: makeId(), name: "Ari", role: "멤버", rate: 15, revenueWeight: 1.3,
+      id: makeId(), name: "원준석", role: "멤버", rate: 15, revenueWeight: 1.3,
       contract: createContract("상", "본인 일부 부담", "중간", "개인 광고와 패션 행사 기여도를 반영해 멤버 몫 중 15%를 배정합니다.", "개인 광고 매출에도 동일 지급률을 적용합니다."),
     },
     {
-      id: makeId(), name: "Bora", role: "멤버", rate: 13, revenueWeight: 1.1,
+      id: makeId(), name: "장현우", role: "멤버", rate: 13, revenueWeight: 1.1,
       contract: createContract("중상", "회사 부담", "높음", "보컬 활동과 음원 기여도를 반영해 멤버 몫 중 13%를 배정합니다.", "OST 매출은 개인 매출로 구분합니다."),
     },
     {
-      id: makeId(), name: "Yuna", role: "멤버", rate: 12, revenueWeight: 1,
+      id: makeId(), name: "김진현", role: "멤버", rate: 12, revenueWeight: 1,
       contract: createContract("중", "회사 부담", "높음", "방송과 팬 커뮤니티 기여도를 반영해 멤버 몫 중 12%를 배정합니다.", "방송 고정 출연료는 개인 매출로 구분합니다."),
     },
     {
-      id: makeId(), name: "Dami", role: "멤버", rate: 10, revenueWeight: 0.8,
+      id: makeId(), name: "이준영", role: "멤버", rate: 10, revenueWeight: 0.8,
       contract: createContract("중", "회사 부담", "높음", "퍼포먼스와 해외 활동 기여도를 반영해 멤버 몫 중 10%를 배정합니다.", "해외 활동 증가 시 지급률 재협상 대상입니다."),
     },
   ];
   state.staff = [{ id: makeId(), name: "Manager Choi", role: "매니저", settlementExcluded: true }];
   state.selectedContractId = state.members[0].id;
   state.revenueItems = [
-    createRevenue("2026-07-17", "미니앨범 쇼케이스", "공통 매출", 36000000, ["Ari", "Bora", "Yuna", "Dami"]),
-    createRevenue("2026-07-20", "Ari 패션 브랜드 광고", "개인 매출", 9500000, ["Ari"]),
-    createRevenue("2026-07-23", "Bora 드라마 OST", "개인 매출", 6800000, ["Bora"]),
-    createRevenue("2026-07-27", "아시아 팬미팅", "공통 매출", 54000000, ["Ari", "Bora", "Yuna", "Dami"]),
-    createRevenue("2026-07-29", "Yuna 예능 고정 출연료", "개인 매출", 5200000, ["Yuna"]),
+    createRevenue("2026-07-17", "미니앨범 쇼케이스", "공통 매출", 36000000, ["원준석", "장현우", "김진현", "이준영"]),
+    createRevenue("2026-07-20", "원준석 패션 브랜드 광고", "개인 매출", 9500000, ["원준석"]),
+    createRevenue("2026-07-23", "장현우 드라마 OST", "개인 매출", 6800000, ["장현우"]),
+    createRevenue("2026-07-27", "아시아 팬미팅", "공통 매출", 54000000, ["원준석", "장현우", "김진현", "이준영"]),
+    createRevenue("2026-07-29", "김진현 예능 고정 출연료", "개인 매출", 5200000, ["김진현"]),
   ];
   state.attendance = [
-    ["2026-07-16", "Ari", "출근"], ["2026-07-16", "Bora", "출근"], ["2026-07-16", "Yuna", "출근"], ["2026-07-16", "Dami", "출근"],
-    ["2026-07-18", "Ari", "외부일정"], ["2026-07-18", "Bora", "외부일정"], ["2026-07-18", "Yuna", "외부일정"], ["2026-07-18", "Dami", "외부일정"],
-    ["2026-07-21", "Bora", "출근"], ["2026-07-21", "Yuna", "출근"],
-    ["2026-07-25", "Ari", "외부일정"], ["2026-07-25", "Bora", "외부일정"], ["2026-07-25", "Yuna", "외부일정"], ["2026-07-25", "Dami", "외부일정"],
+    ["2026-07-16", "원준석", "출근"], ["2026-07-16", "장현우", "출근"], ["2026-07-16", "김진현", "출근"], ["2026-07-16", "이준영", "출근"],
+    ["2026-07-18", "원준석", "외부일정"], ["2026-07-18", "장현우", "외부일정"], ["2026-07-18", "김진현", "외부일정"], ["2026-07-18", "이준영", "외부일정"],
+    ["2026-07-21", "장현우", "출근"], ["2026-07-21", "김진현", "출근"],
+    ["2026-07-25", "원준석", "외부일정"], ["2026-07-25", "장현우", "외부일정"], ["2026-07-25", "김진현", "외부일정"], ["2026-07-25", "이준영", "외부일정"],
   ].map(([date, member, status]) => ({ id: makeId(), date, member, status }));
   state.schedules = [
-    { id: makeId(), date: "2026-07-16", title: "컴백 안무 합주", members: ["Ari", "Bora", "Yuna", "Dami"] },
-    { id: makeId(), date: "2026-07-18", title: "음악방송 리허설", members: ["Ari", "Bora", "Yuna", "Dami"] },
-    { id: makeId(), date: "2026-07-21", title: "라디오 스페셜 DJ", members: ["Bora", "Yuna"] },
-    { id: makeId(), date: "2026-07-25", title: "팬미팅 무대 점검", members: ["Ari", "Bora", "Yuna", "Dami"] },
+    { id: makeId(), date: "2026-07-16", title: "컴백 안무 합주", members: ["원준석", "장현우", "김진현", "이준영"] },
+    { id: makeId(), date: "2026-07-18", title: "음악방송 리허설", members: ["원준석", "장현우", "김진현", "이준영"] },
+    { id: makeId(), date: "2026-07-21", title: "라디오 스페셜 DJ", members: ["장현우", "김진현"] },
+    { id: makeId(), date: "2026-07-25", title: "팬미팅 무대 점검", members: ["원준석", "장현우", "김진현", "이준영"] },
   ];
   state.expenses = [
     createExpense("2026-07-16", "합주실 점심", 118000, "12:15"),
@@ -818,8 +818,8 @@ function seedOtherIdolData() {
     createExpense("2026-07-25", "팬미팅 리허설 저녁", 126000, "19:05"),
   ];
   state.marketingPayroll = [
-    { id: makeId(), name: "Han Sora", role: "마케팅 팀장", monthlySalary: 4600000, hours: { Ari: 32, Bora: 24, Yuna: 20, Dami: 16 } },
-    { id: makeId(), name: "Oh Jin", role: "콘텐츠 마케터", monthlySalary: 3700000, hours: { Ari: 18, Bora: 26, Yuna: 30, Dami: 22 } },
+    { id: makeId(), name: "Han Sora", role: "마케팅 팀장", monthlySalary: 4600000, hours: { "원준석": 32, "장현우": 24, "김진현": 20, "이준영": 16 } },
+    { id: makeId(), name: "Oh Jin", role: "콘텐츠 마케터", monthlySalary: 3700000, hours: { "원준석": 18, "장현우": 26, "김진현": 30, "이준영": 22 } },
   ];
   state.marketingInitialized = true;
   state.auditLogs = [];
