@@ -766,7 +766,7 @@ function seedData() {
 
 function seedOtherIdolData() {
   state.version = DATA_VERSION;
-  state.groupName = "Lunelle";
+  state.groupName = "삼데헌";
   state.periodStart = "2026-07-16";
   state.periodEnd = "2026-07-31";
   state.approvalLimit = 30000;
@@ -823,7 +823,7 @@ function seedOtherIdolData() {
   ];
   state.marketingInitialized = true;
   state.auditLogs = [];
-  addAudit("다른 아이돌 더미 연동", "Lunelle 멤버 4명, 매출, 활동 기록, 일정, 식비, 마케팅 급여 데이터를 불러왔습니다.");
+  addAudit("다른 아이돌 더미 연동", "삼데헌 멤버 4명, 매출, 활동 기록, 일정, 식비, 마케팅 급여 데이터를 불러왔습니다.");
   syncInputs();
   render();
 }
