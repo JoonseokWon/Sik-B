@@ -36,7 +36,7 @@ const state = {
   schedules: [],
   auditLogs: [],
   selectedContractId: "",
-  integrationStatus: { attendance: "Excel 선택 필요", schedule: "Excel 선택 필요", expense: "Excel 선택 필요" },
+  integrationStatus: { attendance: ".xlsx 선택 필요", schedule: ".xlsx 선택 필요", expense: ".xlsx 선택 필요" },
 };
 
 const els = {
@@ -191,8 +191,8 @@ function ensureIntegrationPermission(action) {
   if (!ensureAuthenticated()) return false;
   const user = currentUser();
   if (isHrMaster(user)) return true;
-  addAudit("Excel 연동 차단", `${action}: 인사 마스터 계정만 실행할 수 있습니다.`, user);
-  alert("Excel 데이터 연동은 인사 마스터 계정만 실행할 수 있습니다.");
+  addAudit(".xlsx Import 차단", `${action}: 인사 마스터 계정만 실행할 수 있습니다.`, user);
+  alert(".xlsx Import는 인사 마스터 계정만 실행할 수 있습니다.");
   render();
   return false;
 }
@@ -515,7 +515,7 @@ function parseExpenseRows(rows, sourceFileName) {
     expense.excluded = excludedIndex >= 0 && row[excludedIndex] ? splitNames(row[excludedIndex]) : defaultExcluded(expense.participants);
     expense.approvalStatus = statusIndex >= 0 && APPROVAL_STATES.includes(row[statusIndex]) ? row[statusIndex] : defaultApprovalStatus(expense);
     expense.approver = approverIndex >= 0 && row[approverIndex] ? row[approverIndex] : "인사 마스터";
-    expense.recommendationNote = `${sourceFileName} Excel 연동`;
+    expense.recommendationNote = `${sourceFileName} .xlsx Import`;
     return expense;
   }).filter((expense) => expense.date && expense.title && expense.amount >= 0);
 }
@@ -558,23 +558,23 @@ async function importIntegrationWorkbook(file, integrationType) {
       state.attendance = replaceByKey(state.attendance, imported.attendance, (row) => `${row.date}|${row.member}`);
       state.integrationStatus.attendance = `${file.name}, ${imported.attendance.length}건`;
       state.expenses.forEach(syncExpenseRecommendation);
-      addAudit("회사 출입 기록 Excel 연동", `${file.name}에서 활동 기록 ${imported.attendance.length}건을 반영했습니다.`);
+      addAudit("회사 출입 기록 .xlsx Import", `${file.name}에서 활동 기록 ${imported.attendance.length}건을 반영했습니다.`);
     } else if (integrationType === "schedule") {
       state.attendance = replaceByKey(state.attendance, imported.attendance, (row) => `${row.date}|${row.member}`);
       state.schedules = replaceByKey(state.schedules, imported.schedules, (row) => `${row.date}|${row.title}`);
       state.integrationStatus.schedule = `${file.name}, 일정 ${imported.schedules.length}건`;
       state.expenses.forEach(syncExpenseRecommendation);
-      addAudit("그룹 캘린더 Excel 연동", `${file.name}에서 일정 ${imported.schedules.length}건과 활동 상태 ${imported.attendance.length}건을 반영했습니다.`);
+      addAudit("그룹 캘린더 .xlsx Import", `${file.name}에서 일정 ${imported.schedules.length}건과 활동 상태 ${imported.attendance.length}건을 반영했습니다.`);
     } else {
       state.expenses = replaceByKey(state.expenses, imported.expenses, (row) => `${row.date}|${row.transactionTime}|${row.title}`);
       state.integrationStatus.expense = `${file.name}, ${imported.expenses.length}건`;
       refreshAutomaticApprovalStatuses();
-      addAudit("식비 결제 Excel 연동", `${file.name}에서 식비 결제 ${imported.expenses.length}건을 반영했습니다.`);
+      addAudit("식비 결제 .xlsx Import", `${file.name}에서 식비 결제 ${imported.expenses.length}건을 반영했습니다.`);
     }
     render();
   } catch (error) {
-    addAudit("Excel 연동 실패", `${file.name}: ${error.message || "알 수 없는 오류"}`);
-    alert(`Excel 연동에 실패했습니다.\n${error.message || "파일 형식을 확인해 주세요."}`);
+    addAudit(".xlsx Import 실패", `${file.name}: ${error.message || "알 수 없는 오류"}`);
+    alert(`.xlsx Import에 실패했습니다.\n${error.message || "파일 형식을 확인해 주세요."}`);
     render();
   }
 }
@@ -956,7 +956,7 @@ function seedData() {
   state.periodEnd = "2026-07-15";
   state.approvalLimit = 30000;
   state.companyRate = 50;
-  state.integrationStatus = { attendance: "Excel 선택 필요", schedule: "Excel 선택 필요", expense: "Excel 선택 필요" };
+  state.integrationStatus = { attendance: ".xlsx 선택 필요", schedule: ".xlsx 선택 필요", expense: ".xlsx 선택 필요" };
   state.members = [
     {
       id: makeId(),
@@ -1045,7 +1045,7 @@ function seedOtherIdolData() {
   state.approvalLimit = 30000;
   state.concurrentApprovalCount = 3;
   state.companyRate = 50;
-  state.integrationStatus = { attendance: "Excel 선택 필요", schedule: "Excel 선택 필요", expense: "Excel 선택 필요" };
+  state.integrationStatus = { attendance: ".xlsx 선택 필요", schedule: ".xlsx 선택 필요", expense: ".xlsx 선택 필요" };
   state.members = [
     {
       id: makeId(), name: "원준석", role: "멤버", rate: 15, revenueWeight: 1.3,
@@ -1109,9 +1109,12 @@ function normalizeState() {
   state.companyRate = Number(state.companyRate ?? 50);
   state.currentUserId = state.currentUserId || "FIN-1024";
   state.integrationStatus = state.integrationStatus && typeof state.integrationStatus === "object" ? state.integrationStatus : {};
-  state.integrationStatus.attendance = String(state.integrationStatus.attendance || "Excel 선택 필요");
-  state.integrationStatus.schedule = String(state.integrationStatus.schedule || "Excel 선택 필요");
-  state.integrationStatus.expense = String(state.integrationStatus.expense || "Excel 선택 필요");
+  const normalizeImportStatus = (value) => String(value || ".xlsx 선택 필요")
+    .replace("Excel 선택 필요", ".xlsx 선택 필요")
+    .replace("Excel 연동", ".xlsx Import");
+  state.integrationStatus.attendance = normalizeImportStatus(state.integrationStatus.attendance);
+  state.integrationStatus.schedule = normalizeImportStatus(state.integrationStatus.schedule);
+  state.integrationStatus.expense = normalizeImportStatus(state.integrationStatus.expense);
   state.members = Array.isArray(state.members) ? state.members : [];
   state.staff = Array.isArray(state.staff) ? state.staff : [];
   const movedStaff = state.members.filter((member) => EXCLUDED_ROLES.has(member.role));
@@ -1158,7 +1161,8 @@ function normalizeState() {
     expense.separateMealParticipants = expense.separateMealParticipants.filter((name) => expense.participants.includes(name));
     expense.approvalStatus = APPROVAL_STATES.includes(expense.approvalStatus) ? expense.approvalStatus : defaultApprovalStatus(expense);
     expense.approver = !expense.approver || expense.approver === "상위 매니저" ? "인사 마스터" : expense.approver;
-    expense.recommendationNote = expense.recommendationNote || "날짜 기준으로 다시 계산할 수 있습니다.";
+    expense.recommendationNote = String(expense.recommendationNote || "날짜 기준으로 다시 계산할 수 있습니다.")
+      .replace("Excel 연동", ".xlsx Import");
     expense.isExceptional = Boolean(expense.isExceptional);
     expense.exceptionNote = String(expense.exceptionNote || "");
   });
@@ -1180,6 +1184,16 @@ function normalizeState() {
   state.attendance = Array.isArray(state.attendance) ? state.attendance : [];
   state.schedules = Array.isArray(state.schedules) ? state.schedules : [];
   state.auditLogs = Array.isArray(state.auditLogs) ? state.auditLogs : [];
+  state.auditLogs.forEach((log) => {
+    log.actor = String(log.actor || "").replaceAll("정산 담당자", "현장 매니저");
+    log.action = String(log.action || "")
+      .replaceAll("Excel 연동", ".xlsx Import")
+      .replaceAll("Excel 출력", ".xlsx Export");
+    log.detail = String(log.detail || "")
+      .replaceAll("정산 담당자", "현장 매니저")
+      .replaceAll("Excel 연동", ".xlsx Import")
+      .replaceAll("Excel 출력", ".xlsx Export");
+  });
 }
 
 function renderMembers() {
@@ -1468,7 +1482,7 @@ function applyRoleVisibility() {
   els.importIdolButton.textContent = state.groupName === "삼데헌" ? "삼일돌 연동" : "다른 아이돌 연동";
   document.querySelectorAll("[data-integration-import]").forEach((button) => {
     button.disabled = !isHrMaster(user);
-    button.title = isHrMaster(user) ? "Excel 파일을 선택해 데이터를 연동합니다." : "인사 마스터 전용 기능입니다.";
+    button.title = isHrMaster(user) ? ".xlsx 파일을 선택해 데이터를 Import합니다." : "인사 마스터 전용 기능입니다.";
   });
   const badge = els.integrationPanel?.querySelector(".permission-badge");
   if (badge) badge.textContent = isHrMaster(user) ? "인사 마스터 전용" : "인사 마스터만 실행 가능";
@@ -1692,19 +1706,19 @@ function exportWorkbook() {
   if (!ensureAuthenticated()) return;
   const user = currentUser();
   if (!user.canExport) {
-    addAudit("출력 차단", `${user.name} 계정은 Excel 출력 권한이 없습니다.`, user);
-    alert("현재 계정은 Excel 출력 권한이 없습니다.");
+    addAudit("Export 차단", `${user.name} 계정은 .xlsx Export 권한이 없습니다.`, user);
+    alert("현재 계정은 .xlsx Export 권한이 없습니다.");
     render();
     return;
   }
   const missingExceptionReason = state.expenses.find((expense) => expense.isExceptional && !expense.exceptionNote.trim());
   if (missingExceptionReason) {
-    addAudit("Excel 출력 차단", `${missingExceptionReason.date} ${missingExceptionReason.title}: 특이 체크된 식비의 비고(사유)가 입력되지 않았습니다.`, user);
+    addAudit(".xlsx Export 차단", `${missingExceptionReason.date} ${missingExceptionReason.title}: 특이 체크된 식비의 비고(사유)가 입력되지 않았습니다.`, user);
     alert(`특이 체크된 식비의 비고(사유)를 입력해 주세요.\n${missingExceptionReason.date} ${missingExceptionReason.title}`);
     render();
     return;
   }
-  addAudit("Excel 출력", `${state.groupName} ${state.periodStart}~${state.periodEnd} 정산 근거 파일을 출력했습니다.`, user);
+  addAudit(".xlsx Export", `${state.groupName} ${state.periodStart}~${state.periodEnd} 정산 근거 파일을 출력했습니다.`, user);
   const workbook = buildXlsxBytes();
   const blob = new Blob([workbook], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
@@ -1926,7 +1940,7 @@ document.addEventListener("change", (event) => {
   }
   if (target === els.externalExcelInput) {
     const integrationType = target.dataset.integrationType;
-    if (!integrationType || !ensureIntegrationPermission("Excel 파일 연동")) {
+    if (!integrationType || !ensureIntegrationPermission(".xlsx Import")) {
       target.value = "";
       return;
     }
