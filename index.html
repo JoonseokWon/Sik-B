@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Food-Fee 정산 툴</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=20260714-separate-meal">
   </head>
   <body>
     <main class="app-shell">
@@ -15,7 +15,7 @@
         </div>
         <div class="actions">
           <button id="exportButton" type="button">Excel 내보내기</button>
-          <button id="seedButton" type="button">Samildol 더미 연동</button>
+          <button id="importIdolButton" type="button">다른 아이돌 연동</button>
           <button id="resetButton" type="button" class="ghost">초기화</button>
         </div>
       </section>
@@ -44,6 +44,10 @@
         <article>
           <span>식비 공제 합계</span>
           <strong id="totalFood">0원</strong>
+        </article>
+        <article>
+          <span>마케팅 급여 상계</span>
+          <strong id="totalMarketing">0원</strong>
         </article>
         <article>
           <span>승인 대기/보류</span>
@@ -76,11 +80,15 @@
             <input id="approvalLimit" type="number" min="0" step="1000" value="30000">
           </label>
           <label>
+            동시간대 결제 승인 기준
+            <input id="concurrentApprovalCount" type="number" min="2" step="1" value="3">
+          </label>
+          <label>
             회사 지급률
             <input id="companyRate" type="number" min="0" max="100" step="0.1" value="50">
           </label>
           <div class="note">
-            회사 지급률과 멤버별 계약 지급률의 합계가 100%가 되도록 관리합니다. 출퇴근 기록과 일정표를 기준으로 예상 식사인원을 산출합니다.
+            회사 지급률과 멤버별 계약 지급률의 합계가 100%가 되도록 관리합니다. 같은 날짜의 같은 시간대에 기준 횟수 이상 결제되면 승인이 필요합니다.
           </div>
         </aside>
 
@@ -105,6 +113,7 @@
                   <th>식비 건수</th>
                   <th>공제 전</th>
                   <th>식비 공제</th>
+                  <th>마케팅 급여 상계</th>
                   <th>공제 후</th>
                   <th></th>
                 </tr>
@@ -131,11 +140,23 @@
         <div class="panel-header">
           <div>
             <h2>식비 결제 건</h2>
-            <p>비용 날짜를 기준으로 출퇴근 기록과 일정표에서 예상 식사인원을 불러올 수 있습니다.</p>
+            <p>식사 생략 또는 별도 식사 인원을 체크하면 해당 식비 배분에서 제외됩니다. 샐러드 주문 같은 예외는 특이 체크하고 사유와 실제 식비를 기록할 수 있습니다.</p>
           </div>
           <button id="addExpenseButton" type="button" class="small">비용 추가</button>
         </div>
         <div id="expenseRows" class="compact-list"></div>
+      </section>
+
+      <section class="panel marketing-panel">
+        <div class="panel-header">
+          <div>
+            <h2>마케팅 사업부 급여 배부</h2>
+            <p>직원별 월 급여를 아이돌별 실제 투입시간 비율로 배부하고, 각 아이돌에게 정산할 금액에서 상계합니다.</p>
+          </div>
+          <button id="addMarketingButton" type="button" class="small">직원 추가</button>
+        </div>
+        <div class="note formula-note">PoC에서는 월 급여 전액을 현재 정산기간에 배부한다고 가정합니다. 배부액 = 직원 월 급여 × 해당 아이돌 투입시간 ÷ 직원 총 투입시간</div>
+        <div id="marketingRows" class="table-wrap"></div>
       </section>
 
       <section class="lower-grid">
@@ -182,7 +203,7 @@
           <article>
             <strong>법인카드/배달 결제</strong>
             <span>식비 결제 건과 일정 참여자 매칭</span>
-            <b>더미 연결</b>
+            <b>파일 연동</b>
           </article>
         </div>
       </section>
@@ -195,6 +216,6 @@
       </section>
     </main>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=20260715-concurrent-approval"></script>
   </body>
 </html>

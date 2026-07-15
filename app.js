@@ -13,7 +13,7 @@ const ACTIVITY_STATES = ["출근", "대기", "외부일정", "제외"];
 const INTERNAL_USERS = [
   { id: "FIN-1024", name: "정산 담당자", role: "정산 담당자", canEdit: true, canExport: true, canApprove: false },
   { id: "MGR-2201", name: "상위 매니저", role: "승인권자", canEdit: false, canExport: true, canApprove: true },
-  { id: "HR-3007", name: "인사 마스터", role: "내부 데이터 관리자", canEdit: true, canExport: false, canApprove: false },
+  { id: "HR-3007", name: "인사 마스터", role: "내부 데이터 관리자", canEdit: true, canExport: false, canApprove: true },
 ];
 
 const state = {
@@ -22,12 +22,15 @@ const state = {
   periodStart: "2026-07-01",
   periodEnd: "2026-07-15",
   approvalLimit: 30000,
+  concurrentApprovalCount: 3,
   companyRate: 50,
   currentUserId: "FIN-1024",
   members: [],
   staff: [],
   revenueItems: [],
   expenses: [],
+  marketingPayroll: [],
+  marketingInitialized: false,
   attendance: [],
   schedules: [],
   auditLogs: [],
@@ -41,14 +44,17 @@ const els = {
   periodStart: document.querySelector("#periodStart"),
   periodEnd: document.querySelector("#periodEnd"),
   approvalLimit: document.querySelector("#approvalLimit"),
+  concurrentApprovalCount: document.querySelector("#concurrentApprovalCount"),
   companyRate: document.querySelector("#companyRate"),
   memberRows: document.querySelector("#memberRows"),
   revenueRows: document.querySelector("#revenueRows"),
   expenseRows: document.querySelector("#expenseRows"),
+  marketingRows: document.querySelector("#marketingRows"),
   attendanceList: document.querySelector("#attendanceList"),
   scheduleList: document.querySelector("#scheduleList"),
   auditList: document.querySelector("#auditList"),
   contractDetail: document.querySelector("#contractDetail"),
+  importIdolButton: document.querySelector("#importIdolButton"),
   syncExternalButton: document.querySelector("#syncExternalButton"),
   externalExcelInput: document.querySelector("#externalExcelInput"),
   totalRevenue: document.querySelector("#totalRevenue"),
@@ -57,6 +63,7 @@ const els = {
   rateTotal: document.querySelector("#rateTotal"),
   totalGross: document.querySelector("#totalGross"),
   totalFood: document.querySelector("#totalFood"),
+  totalMarketing: document.querySelector("#totalMarketing"),
   approvalCount: document.querySelector("#approvalCount"),
 };
 
@@ -368,19 +375,24 @@ function defaultExcluded(participants) {
   return participants.filter((name) => isSettlementExcluded(name));
 }
 
-function createExpense(date, title, amount) {
+function createExpense(date, title, amount, transactionTime = "12:00") {
   const managers = state.staff.filter((person) => person.settlementExcluded || EXCLUDED_ROLES.has(person.role)).map((person) => person.name);
   const participants = [...new Set([...activityMembersByDate(date), ...managers])];
   const expense = {
     id: makeId(),
     date,
+    transactionTime,
     title,
     amount,
     participants,
     excluded: defaultExcluded(participants),
+    skippedParticipants: [],
+    separateMealParticipants: [],
     approver: "상위 매니저",
     approvalMemo: "",
     recommendationNote: "더미 활동/일정 기준으로 생성됨",
+    isExceptional: false,
+    exceptionNote: "",
   };
   expense.approvalStatus = defaultApprovalStatus(expense);
   return expense;
@@ -388,6 +400,55 @@ function createExpense(date, title, amount) {
 
 function createRevenue(date, title, type, amount, participants) {
   return { id: makeId(), date, title, type, amount, participants };
+}
+
+function defaultMarketingPayroll() {
+  return [
+    { id: makeId(), name: "Kim Ara", role: "마케팅 팀장", monthlySalary: 4500000, hours: { Haru: 34, Min: 24, Seo: 20, Lia: 14, Noa: 8 } },
+    { id: makeId(), name: "Lee Jun", role: "콘텐츠 마케터", monthlySalary: 3800000, hours: { Haru: 18, Min: 30, Seo: 26, Lia: 16, Noa: 10 } },
+    { id: makeId(), name: "Choi Mina", role: "퍼포먼스 마케터", monthlySalary: 3400000, hours: { Haru: 12, Min: 16, Seo: 22, Lia: 28, Noa: 22 } },
+  ];
+}
+
+function marketingEmployeeTotalHours(employee) {
+  return state.members
+    .filter((member) => !EXCLUDED_ROLES.has(member.role))
+    .reduce((sum, member) => sum + Math.max(0, Number(employee.hours?.[member.name] || 0)), 0);
+}
+
+function marketingAllocations(employee) {
+  const members = state.members.filter((member) => !EXCLUDED_ROLES.has(member.role));
+  const totalHours = marketingEmployeeTotalHours(employee);
+  if (!totalHours) return Object.fromEntries(members.map((member) => [member.name, 0]));
+  const salary = Math.max(0, Math.round(Number(employee.monthlySalary || 0)));
+  const allocations = members.map((member, index) => {
+    const raw = salary * Math.max(0, Number(employee.hours?.[member.name] || 0)) / totalHours;
+    return { name: member.name, amount: Math.floor(raw), remainder: raw - Math.floor(raw), index };
+  });
+  let remaining = salary - allocations.reduce((sum, item) => sum + item.amount, 0);
+  [...allocations]
+    .sort((a, b) => b.remainder - a.remainder || a.index - b.index)
+    .forEach((item) => {
+      if (remaining > 0) {
+        item.amount += 1;
+        remaining -= 1;
+      }
+    });
+  return Object.fromEntries(allocations.map((item) => [item.name, item.amount]));
+}
+
+function marketingAllocation(employee, memberName) {
+  return marketingAllocations(employee)[memberName] || 0;
+}
+
+function marketingCostForMember(memberName) {
+  return state.marketingPayroll.reduce((sum, employee) => sum + marketingAllocation(employee, memberName), 0);
+}
+
+function totalMarketingOffset() {
+  return state.members
+    .filter((member) => !EXCLUDED_ROLES.has(member.role))
+    .reduce((sum, member) => sum + marketingCostForMember(member.name), 0);
 }
 
 function createContract(popularityTier, traineeCost, companyInvestment, rateBasis, specialClause) {
@@ -403,7 +464,12 @@ function createContract(popularityTier, traineeCost, companyInvestment, rateBasi
 }
 
 function billableParticipants(expense) {
-  return expense.participants.filter((name) => !expense.excluded.includes(name));
+  const excluded = new Set([
+    ...(expense.excluded || []),
+    ...(expense.skippedParticipants || []),
+    ...(expense.separateMealParticipants || []),
+  ]);
+  return expense.participants.filter((name) => !excluded.has(name));
 }
 
 function expenseShare(expense) {
@@ -412,8 +478,28 @@ function expenseShare(expense) {
   return Math.ceil(Number(expense.amount || 0) / billable);
 }
 
+function expenseHourKey(expense) {
+  const hour = String(expense.transactionTime || "12:00").slice(0, 2).padStart(2, "0");
+  return `${expense.date} ${hour}`;
+}
+
+function concurrentExpenseCount(expense) {
+  const key = expenseHourKey(expense);
+  const matches = state.expenses.filter((item) => item.approvalStatus !== "반려" && expenseHourKey(item) === key);
+  return matches.length + (matches.some((item) => item.id === expense.id) ? 0 : 1);
+}
+
+function expenseApprovalReasons(expense) {
+  const reasons = [];
+  if (billableParticipants(expense).length === 0) reasons.push("정산 대상 없음");
+  if (expenseShare(expense) > Number(state.approvalLimit || 0)) reasons.push(`1인 식비 ${currency.format(expenseShare(expense))}`);
+  const concurrentCount = concurrentExpenseCount(expense);
+  if (concurrentCount >= Number(state.concurrentApprovalCount || 3)) reasons.push(`동시간대 결제 ${concurrentCount}건`);
+  return reasons;
+}
+
 function expenseNeedsApproval(expense) {
-  return billableParticipants(expense).length === 0 || expenseShare(expense) > Number(state.approvalLimit || 0);
+  return expenseApprovalReasons(expense).length > 0;
 }
 
 function defaultApprovalStatus(expense) {
@@ -423,6 +509,12 @@ function defaultApprovalStatus(expense) {
 
 function expenseStatus(expense) {
   return expense.approvalStatus || defaultApprovalStatus(expense);
+}
+
+function refreshAutomaticApprovalStatuses() {
+  state.expenses.forEach((expense) => {
+    if (["자동 처리", "승인 대기"].includes(expense.approvalStatus)) expense.approvalStatus = defaultApprovalStatus(expense);
+  });
 }
 
 function revenueShare(item, memberName) {
@@ -521,15 +613,16 @@ function applyContractPreset(member) {
 
 function calculateMember(member) {
   if (EXCLUDED_ROLES.has(member.role)) {
-    return { revenue: revenueBreakdown(member), mealCount: 0, gross: 0, food: 0, net: 0 };
+    return { revenue: revenueBreakdown(member), mealCount: 0, gross: 0, food: 0, marketing: 0, net: 0 };
   }
   const revenue = revenueBreakdown(member);
   const memberExpenses = state.expenses.filter(
     (expense) => inPeriod(expense.date) && expenseStatus(expense) !== "반려" && billableParticipants(expense).includes(member.name),
   );
   const food = memberExpenses.reduce((sum, expense) => sum + expenseShare(expense), 0);
+  const marketing = marketingCostForMember(member.name);
   const gross = revenue.total;
-  return { revenue, mealCount: memberExpenses.length, gross, food, net: gross - food };
+  return { revenue, mealCount: memberExpenses.length, gross, food, marketing, net: gross - food - marketing };
 }
 
 function attendanceDates() {
@@ -565,6 +658,8 @@ function syncExpenseRecommendation(expense) {
   const previous = expense.participants.join(", ");
   expense.participants = participants;
   expense.excluded = defaultExcluded(participants);
+  expense.skippedParticipants = (expense.skippedParticipants || []).filter((name) => participants.includes(name));
+  expense.separateMealParticipants = (expense.separateMealParticipants || []).filter((name) => participants.includes(name));
   expense.approvalStatus = defaultApprovalStatus(expense);
   expense.recommendationNote = `활동 기록/일정표 기준 ${participants.length}명 적용`;
   addAudit("예상 식사인원 적용", `${expense.date} ${expense.title}: ${previous || "없음"} -> ${participants.join(", ") || "예상 없음"}`);
@@ -578,6 +673,7 @@ function syncInputs() {
   els.periodStart.value = state.periodStart;
   els.periodEnd.value = state.periodEnd;
   els.approvalLimit.value = state.approvalLimit;
+  els.concurrentApprovalCount.value = state.concurrentApprovalCount;
   els.companyRate.value = state.companyRate;
 }
 
@@ -659,8 +755,10 @@ function seedData() {
     createExpense("2026-07-06", "라디오 대기 간식", 48000),
     createExpense("2026-07-09", "안무 연습 일식", 74000),
   ];
+  state.marketingPayroll = defaultMarketingPayroll();
+  state.marketingInitialized = true;
   state.auditLogs = [
-    { id: makeId(), at: "2026-07-08 09:00", actor: "정산 담당자", action: "더미 연동", detail: "Samildol 활동 기록, 일정표, 매출 항목, 식비 결제 건을 불러왔습니다." },
+    { id: makeId(), at: "2026-07-08 09:00", actor: "정산 담당자", action: "더미 연동", detail: "Samildol 활동 기록, 일정표, 매출 항목, 식비 결제 건, 마케팅 사업부 급여와 아이돌별 투입시간을 불러왔습니다." },
   ];
   syncInputs();
   render();
@@ -707,9 +805,15 @@ async function importActivityWorkbook(file) {
   }
 }
 
+function openExternalFilePicker() {
+  if (!ensureEditPermission("다른 아이돌 연동")) return;
+  els.externalExcelInput?.click();
+}
+
 function normalizeState() {
   state.version = DATA_VERSION;
   state.approvalLimit = Number(state.approvalLimit || 30000);
+  state.concurrentApprovalCount = Math.max(2, Math.round(Number(state.concurrentApprovalCount || 3)));
   state.companyRate = Number(state.companyRate ?? 50);
   state.currentUserId = state.currentUserId || "FIN-1024";
   state.members = Array.isArray(state.members) ? state.members : [];
@@ -749,11 +853,33 @@ function normalizeState() {
   state.expenses = Array.isArray(state.expenses) ? state.expenses : [];
   state.expenses.forEach((expense) => {
     expense.amount = Number(expense.amount || 0);
+    expense.transactionTime = /^\d{2}:\d{2}$/.test(String(expense.transactionTime || "")) ? expense.transactionTime : "12:00";
     expense.participants = Array.isArray(expense.participants) ? expense.participants : [];
     expense.excluded = Array.isArray(expense.excluded) ? expense.excluded : [];
+    expense.skippedParticipants = Array.isArray(expense.skippedParticipants) ? expense.skippedParticipants : [];
+    expense.skippedParticipants = expense.skippedParticipants.filter((name) => expense.participants.includes(name));
+    expense.separateMealParticipants = Array.isArray(expense.separateMealParticipants) ? expense.separateMealParticipants : [];
+    expense.separateMealParticipants = expense.separateMealParticipants.filter((name) => expense.participants.includes(name));
     expense.approvalStatus = APPROVAL_STATES.includes(expense.approvalStatus) ? expense.approvalStatus : defaultApprovalStatus(expense);
     expense.approver = expense.approver || "상위 매니저";
     expense.recommendationNote = expense.recommendationNote || "날짜 기준으로 다시 계산할 수 있습니다.";
+    expense.isExceptional = Boolean(expense.isExceptional);
+    expense.exceptionNote = String(expense.exceptionNote || "");
+  });
+  refreshAutomaticApprovalStatuses();
+  state.marketingPayroll = Array.isArray(state.marketingPayroll) ? state.marketingPayroll : [];
+  if (!state.marketingInitialized) {
+    if (!state.marketingPayroll.length) state.marketingPayroll = defaultMarketingPayroll();
+    state.marketingInitialized = true;
+  }
+  state.marketingPayroll.forEach((employee) => {
+    employee.name = String(employee.name || "마케팅 담당자");
+    employee.role = String(employee.role || "마케팅 담당");
+    employee.monthlySalary = Math.max(0, Math.round(Number(employee.monthlySalary || 0)));
+    employee.hours = employee.hours && typeof employee.hours === "object" ? employee.hours : {};
+    Object.keys(employee.hours).forEach((memberName) => {
+      employee.hours[memberName] = Math.max(0, Number(employee.hours[memberName] || 0));
+    });
   });
   state.attendance = Array.isArray(state.attendance) ? state.attendance : [];
   state.schedules = Array.isArray(state.schedules) ? state.schedules : [];
@@ -779,6 +905,7 @@ function renderMembers() {
       <td>${calc.mealCount}건</td>
       <td class="money">${currency.format(calc.gross)}</td>
       <td class="money deduction">-${currency.format(calc.food)}</td>
+      <td class="money deduction">-${currency.format(calc.marketing)}</td>
       <td class="money net">${currency.format(calc.net)}</td>
       <td><button class="remove" type="button" data-remove-member="${member.id}" aria-label="멤버 삭제">x</button></td>
     `;
@@ -801,7 +928,7 @@ function renderRevenue() {
     `;
     items.forEach((item) => {
     const count = settlementMembers(item.participants).length;
-    const mode = item.type === "개인 매출" ? "개인 귀속" : `공통 매출 풀 (${count}명 참여)`;
+    const mode = item.type === "개인 매출" ? "귀속 멤버" : `${count}명 참여`;
     const card = document.createElement("article");
     card.className = "compact-card";
     card.innerHTML = `
@@ -809,7 +936,7 @@ function renderRevenue() {
         <div>
           <span class="compact-date">${escapeHtml(item.date)}</span>
           <strong>${escapeHtml(item.title)}</strong>
-          <span class="compact-sub">${escapeHtml(item.type)} · ${escapeHtml(mode)}</span>
+          <span class="compact-sub">${escapeHtml(mode)}</span>
         </div>
         <div class="compact-money">${currency.format(item.amount)}</div>
         <div class="compact-people">${escapeHtml(item.participants.join(", "))}</div>
@@ -839,15 +966,17 @@ function renderExpenses() {
     const share = expenseShare(expense);
     const needsApproval = expenseNeedsApproval(expense);
     const status = expenseStatus(expense);
+    const approvalReasonText = expenseApprovalReasons(expense).join(" · ") || "승인 조건 해당 없음";
     const billableCount = billableParticipants(expense).length;
     const card = document.createElement("article");
-    card.className = `compact-card ${needsApproval && status !== "승인 완료" ? "approval-card" : ""}`;
+    card.className = `compact-card ${needsApproval && status !== "승인 완료" ? "approval-card" : ""} ${expense.isExceptional ? "exception-card" : ""}`;
     card.innerHTML = `
       <div class="compact-summary">
         <div>
-          <span class="compact-date">${escapeHtml(expense.date)}</span>
+          <span class="compact-date">${escapeHtml(expense.date)} ${escapeHtml(expense.transactionTime)}</span>
           <strong>${escapeHtml(expense.title)}</strong>
-          <span class="compact-sub">예상 ${billableCount}명 · ${escapeHtml(expenseStatus(expense))} · ${escapeHtml(expense.recommendationNote)}</span>
+          ${expense.isExceptional ? '<span class="exception-badge">특이</span>' : ""}
+          <span class="compact-sub">예상 ${billableCount}명 · ${escapeHtml(expenseStatus(expense))} · ${escapeHtml(approvalReasonText)} · ${escapeHtml(expense.recommendationNote)}</span>
         </div>
         <div class="compact-money">${currency.format(expense.amount)}</div>
         <div class="compact-money">1인 ${currency.format(share)}</div>
@@ -855,15 +984,47 @@ function renderExpenses() {
       </div>
       <div class="compact-edit expense-edit">
         <label>날짜<input type="date" value="${expense.date}" data-expense-field="date" data-id="${expense.id}" aria-label="날짜"></label>
+        <label>결제 시간<input type="time" value="${expense.transactionTime}" data-expense-field="transactionTime" data-id="${expense.id}" aria-label="결제 시간"></label>
         <label>내역<input value="${escapeHtml(expense.title)}" data-expense-field="title" data-id="${expense.id}" aria-label="내역"></label>
-        <label>금액<input type="number" min="0" step="1000" value="${expense.amount}" data-expense-field="amount" data-id="${expense.id}" aria-label="금액"></label>
+        <label>실제 식비<input type="number" min="0" step="100" value="${expense.amount}" data-expense-field="amount" data-id="${expense.id}" aria-label="실제 식비 금액"></label>
         <label class="wide-field">예상 식사인원
         <div class="input-action-cell">
           <input value="${escapeHtml(expense.participants.join(", "))}" data-expense-field="participants" data-id="${expense.id}" aria-label="예상 식사인원">
           <button class="small recommend-button" type="button" data-recommend-expense="${expense.id}" title="같은 날짜의 출퇴근 기록과 일정표를 기준으로 예상 식사인원을 다시 계산합니다.">불러오기</button>
         </div>
         <span class="cell-note">${escapeHtml(expense.recommendationNote)}</span></label>
-        <label>정산 제외<input value="${escapeHtml(expense.excluded.join(", "))}" data-expense-field="excluded" data-id="${expense.id}" aria-label="정산 제외"></label>
+        <label>기타 정산 제외<input value="${escapeHtml(expense.excluded.join(", "))}" data-expense-field="excluded" data-id="${expense.id}" aria-label="기타 정산 제외 인원"></label>
+        <div class="meal-skip-field">
+          <span>식사 생략 인원</span>
+          <div class="meal-skip-options">
+            ${expense.participants.filter((name) => !isSettlementExcluded(name)).map((name) => `
+              <label>
+                <input type="checkbox" data-skip-expense="${expense.id}" data-member="${escapeHtml(name)}" ${expense.skippedParticipants.includes(name) ? "checked" : ""}>
+                <span>${escapeHtml(name)}</span>
+              </label>
+            `).join("") || '<span class="cell-note">정산 대상 멤버가 없습니다.</span>'}
+          </div>
+        </div>
+        <div class="meal-skip-field">
+          <span>별도 식사 인원</span>
+          <div class="meal-skip-options">
+            ${expense.participants.filter((name) => !isSettlementExcluded(name)).map((name) => `
+              <label>
+                <input type="checkbox" data-separate-expense="${expense.id}" data-member="${escapeHtml(name)}" ${expense.separateMealParticipants.includes(name) ? "checked" : ""}>
+                <span>${escapeHtml(name)}</span>
+              </label>
+            `).join("") || '<span class="cell-note">정산 대상 멤버가 없습니다.</span>'}
+          </div>
+        </div>
+        <label class="exception-check">
+          <span>특이 체크</span>
+          <input type="checkbox" ${expense.isExceptional ? "checked" : ""} data-expense-field="isExceptional" data-id="${expense.id}" aria-label="특이 사항 여부">
+          <span>샐러드·식사 생략 등</span>
+        </label>
+        <label class="exception-note wide-field">비고(사유)
+          <input value="${escapeHtml(expense.exceptionNote)}" data-expense-field="exceptionNote" data-id="${expense.id}" aria-label="특이 사항 사유" placeholder="예: Lia 샐러드 주문, Noa 식사 생략" ${expense.isExceptional ? "required" : "disabled"}>
+          ${expense.isExceptional && !expense.exceptionNote.trim() ? '<span class="field-warning">특이 사유를 입력해 주세요.</span>' : ""}
+        </label>
         <label>승인 상태<select data-expense-field="approvalStatus" data-id="${expense.id}" aria-label="승인 상태">
           ${APPROVAL_STATES.map((item) => `<option value="${item}" ${status === item ? "selected" : ""}>${item}</option>`).join("")}
         </select></label>
@@ -873,6 +1034,48 @@ function renderExpenses() {
     `;
     els.expenseRows.appendChild(card);
   });
+}
+
+function renderMarketingPayroll() {
+  if (!els.marketingRows) return;
+  const settlementMemberList = state.members.filter((member) => !EXCLUDED_ROLES.has(member.role));
+  const table = document.createElement("table");
+  table.className = "marketing-table";
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>직원</th>
+        <th>직무</th>
+        <th>월 급여</th>
+        ${settlementMemberList.map((member) => `<th>${escapeHtml(member.name)} 투입시간</th>`).join("")}
+        <th>총 투입시간</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      ${state.marketingPayroll.map((employee) => `
+        <tr>
+          <td><input value="${escapeHtml(employee.name)}" data-marketing-field="name" data-id="${employee.id}" aria-label="마케팅 직원명"></td>
+          <td><input value="${escapeHtml(employee.role)}" data-marketing-field="role" data-id="${employee.id}" aria-label="마케팅 직무"></td>
+          <td><input type="number" min="0" step="100000" value="${employee.monthlySalary}" data-marketing-field="monthlySalary" data-id="${employee.id}" aria-label="${escapeHtml(employee.name)} 월 급여"></td>
+          ${settlementMemberList.map((member) => `<td><input type="number" min="0" step="0.5" value="${Number(employee.hours?.[member.name] || 0)}" data-marketing-hour="${escapeHtml(member.name)}" data-id="${employee.id}" aria-label="${escapeHtml(employee.name)} ${escapeHtml(member.name)} 투입시간"></td>`).join("")}
+          <td class="money">${marketingEmployeeTotalHours(employee)}시간</td>
+          <td><button class="remove" type="button" data-remove-marketing="${employee.id}" aria-label="마케팅 직원 삭제">x</button></td>
+        </tr>
+      `).join("")}
+    </tbody>
+  `;
+  const allocations = document.createElement("div");
+  allocations.className = "marketing-allocation-grid";
+  allocations.innerHTML = settlementMemberList.map((member) => `
+    <article>
+      <span>${escapeHtml(member.name)} 마케팅 급여 상계</span>
+      <strong>${currency.format(marketingCostForMember(member.name))}</strong>
+    </article>
+  `).join("");
+  els.marketingRows.innerHTML = "";
+  els.marketingRows.appendChild(table);
+  els.marketingRows.appendChild(allocations);
 }
 
 function renderAttendance() {
@@ -914,6 +1117,15 @@ function renderAttendance() {
 
 function renderSchedules() {
   els.scheduleList.innerHTML = "";
+  const header = document.createElement("div");
+  header.className = "record-row schedule-row record-header";
+  header.innerHTML = `
+    <span>날짜</span>
+    <span>일정명</span>
+    <span>참여 멤버</span>
+    <span></span>
+  `;
+  els.scheduleList.appendChild(header);
   state.schedules.forEach((row) => {
     const div = document.createElement("div");
     div.className = "record-row schedule-row";
@@ -944,10 +1156,11 @@ function renderTotals() {
       acc.revenue += calc.revenue.total;
       acc.gross += calc.gross;
       acc.food += calc.food;
+      acc.marketing += calc.marketing;
       acc.net += calc.net;
       return acc;
     },
-    { revenue: 0, gross: 0, food: 0, net: 0 },
+    { revenue: 0, gross: 0, food: 0, marketing: 0, net: 0 },
   );
   const commonRevenue = commonRevenuePool();
   const rateTotal = contractRateTotal();
@@ -959,6 +1172,7 @@ function renderTotals() {
   els.totalRevenue.textContent = currency.format(totals.net);
   els.totalGross.textContent = currency.format(totals.gross);
   els.totalFood.textContent = currency.format(totals.food);
+  els.totalMarketing.textContent = currency.format(totals.marketing);
   els.approvalCount.textContent = `${approvalCount}건`;
   document.title = `${state.groupName} Food-Fee 정산`;
 }
@@ -969,6 +1183,7 @@ function render() {
   renderMembers();
   renderRevenue();
   renderExpenses();
+  renderMarketingPayroll();
   renderAttendance();
   renderSchedules();
   renderAuditLogs();
@@ -981,7 +1196,9 @@ function updateSettings() {
   state.periodStart = els.periodStart.value;
   state.periodEnd = els.periodEnd.value;
   state.approvalLimit = Number(els.approvalLimit.value || 0);
+  state.concurrentApprovalCount = Math.max(2, Math.round(Number(els.concurrentApprovalCount.value || 3)));
   state.companyRate = Number(els.companyRate.value || 0);
+  refreshAutomaticApprovalStatuses();
   render();
 }
 
@@ -995,9 +1212,11 @@ function workbookRows() {
     [{ value: "그룹명", style: 2 }, { value: state.groupName }],
     [{ value: "정산 기간", style: 2 }, { value: `${state.periodStart} ~ ${state.periodEnd}` }],
     [{ value: "1인 승인 기준", style: 2 }, { value: state.approvalLimit, style: 4 }],
+    [{ value: "동시간대 결제 승인 기준", style: 2 }, { value: `${state.concurrentApprovalCount}건/동일 시간대` }],
     [{ value: "공통 매출 풀", style: 2 }, { value: commonRevenuePool(), style: 4 }],
     [{ value: "회사 분배금", style: 2 }, { value: companyShareAmount(), style: 4 }],
     [{ value: "지급률 합계", style: 2 }, { value: contractRateTotal(), style: 4 }],
+    [{ value: "마케팅 급여 상계 합계", style: 2 }, { value: totalMarketingOffset(), style: 4 }],
     [],
   ];
   const revenueRows = state.revenueItems.map((item) => [
@@ -1009,8 +1228,18 @@ function workbookRows() {
     return [
       { value: member.name }, { value: member.role }, { value: calc.revenue.commonPayout, style: 4 },
       { value: calc.revenue.individual, style: 4 }, { value: calc.revenue.individualPayout, style: 4 }, { value: member.rate, style: 4 }, { value: contractLine(member) }, { value: calc.mealCount, style: 4 },
-      { value: calc.gross, style: 4 }, { value: calc.food, style: 4 }, { value: calc.net, style: 4 },
+      { value: calc.gross, style: 4 }, { value: calc.food, style: 4 }, { value: calc.marketing, style: 4 }, { value: calc.net, style: 4 },
     ];
+  });
+  const marketingRows = state.marketingPayroll.flatMap((employee) => {
+    const totalHours = marketingEmployeeTotalHours(employee);
+    return state.members
+      .filter((member) => !EXCLUDED_ROLES.has(member.role))
+      .map((member) => [
+        { value: employee.name }, { value: employee.role }, { value: employee.monthlySalary, style: 4 },
+        { value: member.name }, { value: Number(employee.hours?.[member.name] || 0), style: 4 },
+        { value: totalHours, style: 4 }, { value: marketingAllocation(employee, member.name), style: 4 },
+      ]);
   });
   const contractRows = state.members.map((member) => {
     const contract = member.contract || fallbackContract(member);
@@ -1021,16 +1250,18 @@ function workbookRows() {
     ];
   });
   const expenseRows = state.expenses.map((expense) => [
-    { value: expense.date }, { value: expense.title }, { value: expense.amount, style: 4 },
-    { value: expense.participants.join(", ") }, { value: expense.excluded.join(", ") }, { value: billableParticipants(expense).join(", ") },
+    { value: expense.date }, { value: expense.transactionTime }, { value: expense.amount, style: 4 },
+    { value: expense.participants.join(", ") }, { value: expense.skippedParticipants.join(", ") }, { value: expense.separateMealParticipants.join(", ") },
+    { value: expense.excluded.join(", ") }, { value: billableParticipants(expense).join(", ") },
     { value: expenseShare(expense), style: 4 }, { value: expenseStatus(expense), style: ["승인 대기", "보류"].includes(expenseStatus(expense)) ? 7 : 6 },
-    { value: expense.approver },
+    { value: expenseApprovalReasons(expense).join(", ") }, { value: expense.approver }, { value: expense.isExceptional ? "특이" : "일반" }, { value: expense.exceptionNote },
   ]);
   const approvalRows = state.expenses
     .filter((expense) => ["승인 대기", "보류", "반려"].includes(expenseStatus(expense)))
     .map((expense) => [
-      { value: expense.date }, { value: expense.title }, { value: expense.amount, style: 4 },
-      { value: expenseShare(expense), style: 4 }, { value: expenseStatus(expense), style: 7 }, { value: expense.approver },
+      { value: expense.date }, { value: expense.transactionTime }, { value: expense.amount, style: 4 },
+      { value: expenseShare(expense), style: 4 }, { value: expenseStatus(expense), style: 7 },
+      { value: expenseApprovalReasons(expense).join(", ") }, { value: expense.approver },
     ]);
   const activityRows = state.attendance.map((row) => [{ value: row.date }, { value: row.member }, { value: row.status }]);
   const scheduleRows = state.schedules.map((row) => [{ value: row.date }, { value: row.title }, { value: row.members.join(", ") }]);
@@ -1038,10 +1269,11 @@ function workbookRows() {
   return [
     ...summary,
     ...sectionRows("매출 항목", ["날짜", "내역", "구분", "금액", "참여 멤버", "정산 대상 수"], revenueRows),
-    ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출 정산금", "개인 매출 원금", "개인 매출 정산금", "계약 지급률", "계약 근거", "식비 건수", "공제 전", "식비 공제", "공제 후"], memberRows),
+    ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출 정산금", "개인 매출 원금", "개인 매출 정산금", "계약 지급률", "계약 근거", "식비 건수", "공제 전", "식비 공제", "마케팅 급여 상계", "공제 후"], memberRows),
+    ...sectionRows("마케팅 급여 배부", ["직원", "직무", "월 급여", "대상 아이돌", "투입시간", "직원 총 투입시간", "배부액"], marketingRows),
     ...sectionRows("계약서 참조", ["멤버", "역할", "계약 지급률", "계약 유형", "개인 활동 기여도", "연습생 생활비", "회사 투자", "지급률 근거", "특약"], contractRows),
-    ...sectionRows("비용별 분배", ["날짜", "내역", "금액", "예상 식사인원", "정산 제외", "정산 대상", "1인 금액", "상태", "승인권자"], expenseRows),
-    ...sectionRows("승인 필요 건", ["날짜", "내역", "금액", "1인 금액", "상태", "승인권자"], approvalRows),
+    ...sectionRows("비용별 분배", ["날짜", "결제 시간", "실제 식비", "예상 식사인원", "식사 생략 인원", "별도 식사 인원", "기타 정산 제외", "정산 대상", "1인 금액", "상태", "승인 사유", "승인권자", "특이 체크", "비고(사유)"], expenseRows),
+    ...sectionRows("승인 필요 건", ["날짜", "결제 시간", "금액", "1인 금액", "상태", "승인 사유", "승인권자"], approvalRows),
     ...sectionRows("활동 기록", ["날짜", "멤버", "상태"], activityRows),
     ...sectionRows("일정표", ["날짜", "일정명", "참여 멤버"], scheduleRows),
     ...sectionRows("감사 로그", ["일시", "작업자 ID", "권한", "작업자", "작업", "내용"], auditRows),
@@ -1056,7 +1288,7 @@ function worksheetXml() {
       <cols>
         <col min="1" max="1" width="18" customWidth="1"/>
         <col min="2" max="2" width="24" customWidth="1"/>
-        <col min="3" max="10" width="18" customWidth="1"/>
+        <col min="3" max="14" width="18" customWidth="1"/>
       </cols>
       <sheetData>${rowXml}</sheetData>
     </worksheet>`;
@@ -1118,6 +1350,13 @@ function exportWorkbook() {
     render();
     return;
   }
+  const missingExceptionReason = state.expenses.find((expense) => expense.isExceptional && !expense.exceptionNote.trim());
+  if (missingExceptionReason) {
+    addAudit("Excel 출력 차단", `${missingExceptionReason.date} ${missingExceptionReason.title}: 특이 체크된 식비의 비고(사유)가 입력되지 않았습니다.`, user);
+    alert(`특이 체크된 식비의 비고(사유)를 입력해 주세요.\n${missingExceptionReason.date} ${missingExceptionReason.title}`);
+    render();
+    return;
+  }
   addAudit("Excel 출력", `${state.groupName} ${state.periodStart}~${state.periodEnd} 정산 근거 파일을 출력했습니다.`, user);
   const workbook = buildXlsxBytes();
   const blob = new Blob([workbook], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -1140,7 +1379,7 @@ document.addEventListener("input", (event) => {
     render();
     return;
   }
-  if ([els.groupName, els.periodStart, els.periodEnd, els.approvalLimit].includes(target)) updateSettings();
+  if ([els.groupName, els.periodStart, els.periodEnd, els.approvalLimit, els.concurrentApprovalCount].includes(target)) updateSettings();
 });
 
 document.addEventListener("change", (event) => {
@@ -1164,12 +1403,20 @@ document.addEventListener("change", (event) => {
       state.expenses.forEach((expense) => {
         expense.participants = expense.participants.map((name) => (name === previousName ? member.name : name));
         expense.excluded = expense.excluded.map((name) => (name === previousName ? member.name : name));
+        expense.skippedParticipants = (expense.skippedParticipants || []).map((name) => (name === previousName ? member.name : name));
+        expense.separateMealParticipants = (expense.separateMealParticipants || []).map((name) => (name === previousName ? member.name : name));
       });
       state.attendance.forEach((row) => {
         if (row.member === previousName) row.member = member.name;
       });
       state.schedules.forEach((row) => {
         row.members = row.members.map((name) => (name === previousName ? member.name : name));
+      });
+      state.marketingPayroll.forEach((employee) => {
+        if (Object.prototype.hasOwnProperty.call(employee.hours, previousName)) {
+          employee.hours[member.name] = employee.hours[previousName];
+          delete employee.hours[previousName];
+        }
       });
     }
     if (target.dataset.field === "role") {
@@ -1194,21 +1441,102 @@ document.addEventListener("change", (event) => {
   if (target.dataset.expenseField) {
     const expense = state.expenses.find((item) => item.id === target.dataset.id);
     const previous = expense[target.dataset.expenseField];
+    const field = target.dataset.expenseField;
     if (target.dataset.expenseField === "approvalStatus") {
       if (!ensureApprovalPermission(`${expense.title} 승인 상태 변경`)) return;
     } else if (!ensureEditPermission("비용 건 수정")) return;
-    if (target.dataset.expenseField === "amount") expense.amount = Number(target.value || 0);
-    else if (target.dataset.expenseField === "participants") {
+    if (field === "amount") expense.amount = Number(target.value || 0);
+    else if (field === "isExceptional") {
+      expense.isExceptional = target.checked;
+      if (!expense.isExceptional) expense.exceptionNote = "";
+    } else if (field === "participants") {
       expense.participants = splitNames(target.value);
       expense.excluded = defaultExcluded(expense.participants);
-    } else if (target.dataset.expenseField === "excluded") expense.excluded = splitNames(target.value);
-    else expense[target.dataset.expenseField] = target.value;
-    if (["amount", "participants", "excluded", "date"].includes(target.dataset.expenseField) && target.dataset.expenseField !== "approvalStatus") {
+      expense.skippedParticipants = expense.skippedParticipants.filter((name) => expense.participants.includes(name));
+      expense.separateMealParticipants = expense.separateMealParticipants.filter((name) => expense.participants.includes(name));
+    } else if (field === "excluded") expense.excluded = splitNames(target.value);
+    else expense[field] = target.value;
+    if (["amount", "participants", "excluded", "date", "transactionTime"].includes(field) && field !== "approvalStatus") {
       expense.approvalStatus = defaultApprovalStatus(expense);
     }
-    if (target.dataset.expenseField === "date") expense.recommendationNote = "날짜가 바뀌었습니다. 불러오기를 누르면 다시 계산됩니다.";
-    if (target.dataset.expenseField === "participants") expense.recommendationNote = "직접 수정됨";
-    addAudit("비용 건 수정", `${expense.title} ${target.dataset.expenseField}: ${previous} -> ${expense[target.dataset.expenseField]}`);
+    if (field === "date") expense.recommendationNote = "날짜가 바뀌었습니다. 불러오기를 누르면 다시 계산됩니다.";
+    if (field === "participants") expense.recommendationNote = "직접 수정됨";
+    if (["date", "transactionTime", "approvalStatus"].includes(field)) refreshAutomaticApprovalStatuses();
+    if (field === "amount") {
+      const reason = expense.isExceptional ? ` · 특이 사유: ${expense.exceptionNote || "미입력"}` : "";
+      addAudit("식비 금액 직접 수정", `${expense.date} ${expense.title}: ${currency.format(Number(previous || 0))} -> ${currency.format(expense.amount)}${reason}`);
+    } else if (field === "isExceptional") {
+      addAudit("식비 특이 체크", `${expense.date} ${expense.title}: ${expense.isExceptional ? "특이 사항으로 표시" : "특이 표시 해제 및 비고 삭제"}`);
+    } else if (field === "exceptionNote") {
+      addAudit("식비 특이 사유 수정", `${expense.date} ${expense.title}: ${previous || "미입력"} -> ${expense.exceptionNote || "미입력"}`);
+    } else {
+      addAudit("비용 건 수정", `${expense.title} ${field}: ${previous} -> ${expense[field]}`);
+    }
+    render();
+  }
+  if (target.dataset.skipExpense) {
+    if (!ensureEditPermission("식사 생략 인원 수정")) return;
+    const expense = state.expenses.find((item) => item.id === target.dataset.skipExpense);
+    const memberName = target.dataset.member;
+    const skipped = new Set(expense.skippedParticipants || []);
+    if (target.checked) skipped.add(memberName);
+    else skipped.delete(memberName);
+    expense.skippedParticipants = [...skipped];
+    if (target.checked) {
+      expense.separateMealParticipants = (expense.separateMealParticipants || []).filter((name) => name !== memberName);
+      expense.isExceptional = true;
+      if (!expense.exceptionNote.trim() || expense.exceptionNote === `${memberName} 별도 식사`) expense.exceptionNote = `${memberName} 식사 생략`;
+    } else if (expense.exceptionNote === `${memberName} 식사 생략`) {
+      expense.exceptionNote = "";
+      if (!expense.skippedParticipants.length && !expense.separateMealParticipants.length) expense.isExceptional = false;
+    }
+    expense.approvalStatus = defaultApprovalStatus(expense);
+    addAudit(
+      "식사 생략 인원 수정",
+      `${expense.date} ${expense.title}: ${memberName} ${target.checked ? "식사 생략" : "식사 생략 해제"} · 정산 대상 ${billableParticipants(expense).length}명 · 1인 ${currency.format(expenseShare(expense))}`,
+    );
+    render();
+  }
+  if (target.dataset.separateExpense) {
+    if (!ensureEditPermission("별도 식사 인원 수정")) return;
+    const expense = state.expenses.find((item) => item.id === target.dataset.separateExpense);
+    const memberName = target.dataset.member;
+    const separate = new Set(expense.separateMealParticipants || []);
+    if (target.checked) separate.add(memberName);
+    else separate.delete(memberName);
+    expense.separateMealParticipants = [...separate];
+    if (target.checked) {
+      expense.skippedParticipants = (expense.skippedParticipants || []).filter((name) => name !== memberName);
+      expense.isExceptional = true;
+      if (!expense.exceptionNote.trim() || expense.exceptionNote === `${memberName} 식사 생략`) expense.exceptionNote = `${memberName} 별도 식사`;
+    } else if (expense.exceptionNote === `${memberName} 별도 식사`) {
+      expense.exceptionNote = "";
+      if (!expense.skippedParticipants.length && !expense.separateMealParticipants.length) expense.isExceptional = false;
+    }
+    expense.approvalStatus = defaultApprovalStatus(expense);
+    addAudit(
+      "별도 식사 인원 수정",
+      `${expense.date} ${expense.title}: ${memberName} ${target.checked ? "별도 식사로 배분 제외" : "별도 식사 해제"} · 정산 대상 ${billableParticipants(expense).length}명 · 1인 ${currency.format(expenseShare(expense))}`,
+    );
+    render();
+  }
+  if (target.dataset.marketingField) {
+    if (!ensureEditPermission("마케팅 급여 정보 수정")) return;
+    const employee = state.marketingPayroll.find((item) => item.id === target.dataset.id);
+    const field = target.dataset.marketingField;
+    const previous = employee[field];
+    employee[field] = field === "monthlySalary" ? Math.max(0, Math.round(Number(target.value || 0))) : target.value;
+    const fieldLabel = { name: "직원명", role: "직무", monthlySalary: "월 급여" }[field] || field;
+    addAudit("마케팅 급여 수정", `${employee.name} ${fieldLabel}: ${previous} -> ${employee[field]}`);
+    render();
+  }
+  if (target.dataset.marketingHour) {
+    if (!ensureEditPermission("마케팅 투입시간 수정")) return;
+    const employee = state.marketingPayroll.find((item) => item.id === target.dataset.id);
+    const memberName = target.dataset.marketingHour;
+    const previous = Number(employee.hours[memberName] || 0);
+    employee.hours[memberName] = Math.max(0, Number(target.value || 0));
+    addAudit("마케팅 투입시간 수정", `${employee.name} → ${memberName}: ${previous}시간 -> ${employee.hours[memberName]}시간, 배부액 ${currency.format(marketingAllocation(employee, memberName))}`);
     render();
   }
   if (target.dataset.attendanceCellDate) {
@@ -1247,7 +1575,7 @@ document.addEventListener("change", (event) => {
 document.addEventListener("click", (event) => {
   const target = event.target;
   if (target.id === "exportButton") exportWorkbook();
-  if (target.id === "seedButton") seedData();
+  if (target.id === "importIdolButton") openExternalFilePicker();
   if (target.id === "resetButton") {
     localStorage.removeItem("foodFeeState");
     seedData();
@@ -1272,7 +1600,15 @@ document.addEventListener("click", (event) => {
     if (!ensureEditPermission("비용 추가")) return;
     const expense = createExpense(state.periodStart, "새 식비", 0);
     state.expenses.push(expense);
+    refreshAutomaticApprovalStatuses();
     addAudit("비용 추가", `${expense.date} 새 식비를 추가했습니다.`);
+    render();
+  }
+  if (target.id === "addMarketingButton") {
+    if (!ensureEditPermission("마케팅 직원 추가")) return;
+    const hours = Object.fromEntries(state.members.filter((member) => !EXCLUDED_ROLES.has(member.role)).map((member) => [member.name, 0]));
+    state.marketingPayroll.push({ id: makeId(), name: "새 마케팅 직원", role: "마케팅 담당", monthlySalary: 0, hours });
+    addAudit("마케팅 직원 추가", "마케팅 급여 테이블에 새 직원을 추가했습니다.");
     render();
   }
   if (target.id === "addAttendanceButton") {
@@ -1320,7 +1656,15 @@ document.addEventListener("click", (event) => {
     if (!ensureEditPermission("비용 삭제")) return;
     const expense = state.expenses.find((item) => item.id === target.dataset.removeExpense);
     state.expenses = state.expenses.filter((item) => item.id !== target.dataset.removeExpense);
+    refreshAutomaticApprovalStatuses();
     addAudit("비용 삭제", `${expense?.title || "알 수 없음"}을 삭제했습니다.`);
+    render();
+  }
+  if (target.dataset.removeMarketing) {
+    if (!ensureEditPermission("마케팅 직원 삭제")) return;
+    const employee = state.marketingPayroll.find((item) => item.id === target.dataset.removeMarketing);
+    state.marketingPayroll = state.marketingPayroll.filter((item) => item.id !== target.dataset.removeMarketing);
+    addAudit("마케팅 직원 삭제", `${employee?.name || "알 수 없음"}을 급여 테이블에서 삭제했습니다.`);
     render();
   }
   if (target.dataset.removeAttendanceDate) {
