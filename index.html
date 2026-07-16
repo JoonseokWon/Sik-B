@@ -106,7 +106,7 @@
             <input id="companyRate" type="number" min="0" max="100" step="0.1" value="50">
           </label>
           <div class="note" data-settlement-sensitive>
-            회사 지급률과 멤버별 계약 지급률의 합계가 100%가 되도록 관리합니다. 같은 날짜의 같은 시간대에 기준 횟수 이상 결제되면 승인이 필요합니다.
+            회사 지급률과 멤버별 계약 지급률의 합계가 100%가 아니면 변경 내용이 저장되지 않고 .xlsx Export가 차단됩니다. 같은 날짜의 같은 시간대에 기준 횟수 이상 결제되면 승인이 필요합니다.
           </div>
         </aside>
 
@@ -234,6 +234,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=20260716-xlsx-labels"></script>
+    <script src="app.js?v=20260716-rate-validation"></script>
   </body>
 </html>

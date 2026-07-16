@@ -210,10 +210,12 @@ function assignedStateKey(user) {
 }
 
 function persistState() {
+  if (!hasValidContractRateTotal()) return false;
   const serialized = JSON.stringify(state);
   localStorage.setItem("foodFeeState", serialized);
   const key = assignedStateKey(authenticatedUser());
   if (key) localStorage.setItem(key, serialized);
+  return true;
 }
 
 function loadAssignedIdol(user) {
@@ -816,6 +818,10 @@ function memberRateTotal() {
 
 function contractRateTotal() {
   return Number(state.companyRate || 0) + memberRateTotal();
+}
+
+function hasValidContractRateTotal() {
+  return Math.abs(contractRateTotal() - 100) < 0.0001;
 }
 
 function companyShareAmount() {
@@ -1513,7 +1519,7 @@ function renderTotals() {
   els.totalCommonRevenue.textContent = currency.format(commonRevenue);
   els.companyShare.textContent = currency.format(companyShareAmount());
   els.rateTotal.textContent = `${rateTotal}%`;
-  els.rateTotal.parentElement?.classList.toggle("warning-card", rateTotal !== 100);
+  els.rateTotal.parentElement?.classList.toggle("warning-card", !hasValidContractRateTotal());
   els.totalRevenue.textContent = currency.format(totals.net);
   els.totalGross.textContent = currency.format(totals.gross);
   els.totalFood.textContent = currency.format(totals.food);
@@ -1708,6 +1714,12 @@ function exportWorkbook() {
   if (!user.canExport) {
     addAudit("Export 차단", `${user.name} 계정은 .xlsx Export 권한이 없습니다.`, user);
     alert("현재 계정은 .xlsx Export 권한이 없습니다.");
+    render();
+    return;
+  }
+  if (!hasValidContractRateTotal()) {
+    addAudit(".xlsx Export 차단", `회사 지급률과 멤버별 계약 지급률 합계가 ${contractRateTotal()}%입니다. 합계 100%가 필요합니다.`, user);
+    alert(`지급률 합계를 100%로 맞춰 주세요.\n현재 합계: ${contractRateTotal()}%`);
     render();
     return;
   }
