@@ -4,7 +4,7 @@ const currency = new Intl.NumberFormat("ko-KR", {
   maximumFractionDigits: 0,
 });
 
-const DATA_VERSION = 13;
+const DATA_VERSION = 14;
 const ROLES = ["멤버", "매니저", "스태프", "게스트"];
 const EXCLUDED_ROLES = new Set(["매니저", "스태프", "게스트"]);
 const REVENUE_TYPES = ["공통 매출", "개인 매출"];
@@ -647,9 +647,9 @@ function createRevenue(date, title, type, amount, participants) {
 
 function defaultMarketingPayroll() {
   return [
-    { id: makeId(), name: "Kim Ara", role: "마케팅 팀장", monthlySalary: 4500000, nonIdolHours: 60, hours: { Haru: 34, Min: 24, Seo: 20, Lia: 14, Noa: 8 } },
-    { id: makeId(), name: "Lee Jun", role: "콘텐츠 마케터", monthlySalary: 3800000, nonIdolHours: 60, hours: { Haru: 18, Min: 30, Seo: 26, Lia: 16, Noa: 10 } },
-    { id: makeId(), name: "Choi Mina", role: "퍼포먼스 마케터", monthlySalary: 3400000, nonIdolHours: 60, hours: { Haru: 12, Min: 16, Seo: 22, Lia: 28, Noa: 22 } },
+    { id: makeId(), name: "Kim Ara", role: "마케팅 팀장", monthlySalary: 4500000, nonIdolHours: 24, hours: { Haru: 41, Min: 29, Seo: 24, Lia: 17, Noa: 9 } },
+    { id: makeId(), name: "Lee Jun", role: "콘텐츠 마케터", monthlySalary: 3800000, nonIdolHours: 24, hours: { Haru: 22, Min: 36, Seo: 31, Lia: 19, Noa: 12 } },
+    { id: makeId(), name: "Choi Mina", role: "퍼포먼스 마케터", monthlySalary: 3400000, nonIdolHours: 24, hours: { Haru: 14, Min: 19, Seo: 26, Lia: 34, Noa: 27 } },
   ];
 }
 
@@ -1082,8 +1082,8 @@ function seedOtherIdolData() {
     createExpense("2026-07-25", "팬미팅 리허설 저녁", 126000, "19:05"),
   ];
   state.marketingPayroll = [
-    { id: makeId(), name: "Han Sora", role: "마케팅 팀장", monthlySalary: 4600000, nonIdolHours: 68, hours: { "원준석": 32, "장현우": 24, "김진현": 20, "이준영": 16 } },
-    { id: makeId(), name: "Oh Jin", role: "콘텐츠 마케터", monthlySalary: 3700000, nonIdolHours: 64, hours: { "원준석": 18, "장현우": 26, "김진현": 30, "이준영": 22 } },
+    { id: makeId(), name: "Han Sora", role: "마케팅 팀장", monthlySalary: 4600000, nonIdolHours: 28, hours: { "원준석": 40, "장현우": 30, "김진현": 26, "이준영": 20 } },
+    { id: makeId(), name: "Oh Jin", role: "콘텐츠 마케터", monthlySalary: 3700000, nonIdolHours: 24, hours: { "원준석": 22, "장현우": 32, "김진현": 38, "이준영": 28 } },
   ];
   state.marketingInitialized = true;
   state.auditLogs = [];
@@ -1172,7 +1172,7 @@ function normalizeState() {
     });
     const idolHours = marketingEmployeeIdolHours(employee);
     employee.nonIdolHours = employee.nonIdolHours == null
-      ? Math.max(0, 160 - idolHours)
+      ? Math.max(0, 144 - idolHours)
       : Math.max(0, Number(employee.nonIdolHours || 0));
   });
   state.attendance = Array.isArray(state.attendance) ? state.attendance : [];
@@ -1863,7 +1863,7 @@ document.addEventListener("click", (event) => {
   if (target.id === "addMarketingButton") {
     if (!ensureGeneralEditPermission("마케팅 직원 추가")) return;
     const hours = Object.fromEntries(state.members.filter((member) => !EXCLUDED_ROLES.has(member.role)).map((member) => [member.name, 0]));
-    state.marketingPayroll.push({ id: makeId(), name: "새 마케팅 직원", role: "마케팅 담당", monthlySalary: 0, nonIdolHours: 160, hours });
+    state.marketingPayroll.push({ id: makeId(), name: "새 마케팅 직원", role: "마케팅 담당", monthlySalary: 0, nonIdolHours: 144, hours });
     addAudit("마케팅 직원 추가", "마케팅 급여 테이블에 새 직원을 추가했습니다.");
     render();
   }
