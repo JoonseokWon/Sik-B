@@ -793,7 +793,8 @@ td select {
   font-weight: 700;
 }
 
-#externalExcelInput {
+#externalExcelInput,
+#externalIdolInput {
   position: absolute;
   width: 1px;
   height: 1px;

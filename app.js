@@ -11,10 +11,10 @@ const REVENUE_TYPES = ["공통 매출", "개인 매출"];
 const APPROVAL_STATES = ["자동 처리", "승인 대기", "승인 완료", "반려", "보류"];
 const ACTIVITY_STATES = ["출근", "대기", "외부일정", "제외"];
 const INTERNAL_USERS = [
-  { id: "FIN-1024", name: "삼일돌 현장 매니저", role: "현장 매니저", password: "1024", assignedGroup: "Samildol", assignedGroupLabel: "삼일돌", canEdit: true, canExport: false, canApprove: false, canViewAudit: false, canViewMarketingPayroll: false },
-  { id: "FIN-1025", name: "삼데헌 현장 매니저", role: "현장 매니저", password: "1025", assignedGroup: "삼데헌", assignedGroupLabel: "삼데헌", canEdit: true, canExport: false, canApprove: false, canViewAudit: false, canViewMarketingPayroll: false },
-  { id: "MGR-2201", name: "상위 매니저", role: "상위 매니저", password: "2201", canEdit: true, canExport: true, canApprove: false, canViewAudit: false, canViewMarketingPayroll: false },
-  { id: "HR-3007", name: "인사 마스터", role: "내부 데이터 관리자", password: "3007", canEdit: true, canExport: true, canApprove: true, canViewAudit: true, canViewMarketingPayroll: true },
+  { id: "FIN-1024", name: "삼일돌 현장 매니저", role: "현장 매니저", password: "1024", assignedGroup: "Samildol", assignedGroupLabel: "삼일돌", canEdit: true, canApprove: false, canViewAudit: false, canViewMarketingPayroll: false },
+  { id: "FIN-1025", name: "삼데헌 현장 매니저", role: "현장 매니저", password: "1025", assignedGroup: "삼데헌", assignedGroupLabel: "삼데헌", canEdit: true, canApprove: false, canViewAudit: false, canViewMarketingPayroll: false },
+  { id: "MGR-2201", name: "상위 매니저", role: "상위 매니저", password: "2201", canEdit: true, canApprove: false, canViewAudit: false, canViewMarketingPayroll: false },
+  { id: "HR-3007", name: "인사 마스터", role: "내부 데이터 관리자", password: "3007", canEdit: true, canApprove: true, canViewAudit: true, canViewMarketingPayroll: true },
 ];
 
 const state = {
@@ -45,7 +45,6 @@ const els = {
   loginUserId: document.querySelector("#loginUserId"),
   loginPassword: document.querySelector("#loginPassword"),
   loginError: document.querySelector("#loginError"),
-  exportButton: document.querySelector("#exportButton"),
   importIdolButton: document.querySelector("#importIdolButton"),
   resetButton: document.querySelector("#resetButton"),
   groupName: document.querySelector("#groupName"),
@@ -67,6 +66,7 @@ const els = {
   auditPanel: document.querySelector("#auditPanel"),
   integrationPanel: document.querySelector("#integrationPanel"),
   externalExcelInput: document.querySelector("#externalExcelInput"),
+  externalIdolInput: document.querySelector("#externalIdolInput"),
   attendanceIntegrationStatus: document.querySelector("#attendanceIntegrationStatus"),
   scheduleIntegrationStatus: document.querySelector("#scheduleIntegrationStatus"),
   expenseIntegrationStatus: document.querySelector("#expenseIntegrationStatus"),
@@ -176,7 +176,7 @@ function ensureApprovalPermission(action) {
 }
 
 function hasAllPermissions(user = currentUser()) {
-  return user.canEdit && user.canExport && user.canApprove;
+  return user.canEdit && user.canApprove && user.canViewAudit && isHrMaster(user);
 }
 
 function canSwitchIdol(user = currentUser()) {
@@ -193,6 +193,16 @@ function ensureIntegrationPermission(action) {
   if (isHrMaster(user)) return true;
   addAudit(".xlsx Import 차단", `${action}: 인사 마스터 계정만 실행할 수 있습니다.`, user);
   alert(".xlsx Import는 인사 마스터 계정만 실행할 수 있습니다.");
+  render();
+  return false;
+}
+
+function ensureIdolImportPermission() {
+  if (!ensureAuthenticated()) return false;
+  const user = currentUser();
+  if (canSwitchIdol(user)) return true;
+  addAudit("다른 아이돌 연동 차단", `${user.name} 계정에는 다른 아이돌 .xlsx 연동 권한이 없습니다.`, user);
+  alert("다른 아이돌 연동은 상위 매니저와 인사 마스터만 사용할 수 있습니다.");
   render();
   return false;
 }
@@ -249,89 +259,6 @@ function ensureGeneralEditPermission(action) {
   alert("현장 매니저는 현재 아이돌의 식비 정산 업무만 수행할 수 있습니다.");
   render();
   return false;
-}
-
-const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
-  let c = n;
-  for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  return c >>> 0;
-});
-
-function crc32(bytes) {
-  let crc = 0xffffffff;
-  bytes.forEach((byte) => {
-    crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
-  });
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function stringBytes(value) {
-  return new TextEncoder().encode(value);
-}
-
-function concatBytes(chunks) {
-  const length = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-  const output = new Uint8Array(length);
-  let offset = 0;
-  chunks.forEach((chunk) => {
-    output.set(chunk, offset);
-    offset += chunk.length;
-  });
-  return output;
-}
-
-function u16(value) {
-  return new Uint8Array([value & 0xff, (value >>> 8) & 0xff]);
-}
-
-function u32(value) {
-  return new Uint8Array([
-    value & 0xff,
-    (value >>> 8) & 0xff,
-    (value >>> 16) & 0xff,
-    (value >>> 24) & 0xff,
-  ]);
-}
-
-function dosDateTime(date = new Date()) {
-  const time = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
-  const day = date.getDate();
-  const month = date.getMonth() + 1;
-  const year = Math.max(date.getFullYear() - 1980, 0);
-  return { date: (year << 9) | (month << 5) | day, time };
-}
-
-function makeZip(files) {
-  const localParts = [];
-  const centralParts = [];
-  let offset = 0;
-  const stamp = dosDateTime();
-
-  files.forEach((file) => {
-    const name = stringBytes(file.name);
-    const data = stringBytes(file.content);
-    const crc = crc32(data);
-    const localHeader = concatBytes([
-      u32(0x04034b50), u16(20), u16(0x0800), u16(0), u16(stamp.time), u16(stamp.date),
-      u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0), name,
-    ]);
-
-    localParts.push(localHeader, data);
-    centralParts.push(concatBytes([
-      u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0), u16(stamp.time), u16(stamp.date),
-      u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0), u16(0), u16(0),
-      u16(0), u32(0), u32(offset), name,
-    ]));
-    offset += localHeader.length + data.length;
-  });
-
-  const centralDirectory = concatBytes(centralParts);
-  const endRecord = concatBytes([
-    u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length),
-    u32(centralDirectory.length), u32(offset), u16(0),
-  ]);
-
-  return concatBytes([...localParts, centralDirectory, endRecord]);
 }
 
 function readU16(data, offset) {
@@ -581,26 +508,69 @@ async function importIntegrationWorkbook(file, integrationType) {
   }
 }
 
-function columnName(index) {
-  let name = "";
-  let current = index;
-  while (current > 0) {
-    const mod = (current - 1) % 26;
-    name = String.fromCharCode(65 + mod) + name;
-    current = Math.floor((current - mod) / 26);
+const IDOL_GROUPS = [
+  { name: "Samildol", members: ["Haru", "Min", "Seo", "Lia", "Noa"], seed: seedData },
+  { name: "삼데헌", members: ["원준석", "장현우", "김진현", "이준영"], seed: seedOtherIdolData },
+];
+
+function detectIdolGroup(attendance, schedules) {
+  const importedMembers = new Set([
+    ...attendance.map((row) => row.member),
+    ...schedules.flatMap((row) => row.members),
+  ]);
+  const matches = IDOL_GROUPS.map((group) => ({
+    ...group,
+    score: group.members.filter((member) => importedMembers.has(member)).length,
+  })).filter((group) => group.score > 0).sort((a, b) => b.score - a.score);
+  if (!matches.length || (matches[1] && matches[0].score === matches[1].score)) {
+    throw new Error("활동기록과 일정표의 멤버로 아이돌을 식별할 수 없습니다.");
   }
-  return name;
+  return matches[0];
 }
 
-function sheetCell(rowIndex, colIndex, cell) {
-  const ref = `${columnName(colIndex)}${rowIndex}`;
-  const style = cell.style ? ` s="${cell.style}"` : "";
-  if (typeof cell.value === "number") return `<c r="${ref}"${style}><v>${cell.value}</v></c>`;
-  return `<c r="${ref}" t="inlineStr"${style}><is><t>${escapeHtml(cell.value)}</t></is></c>`;
-}
+async function importIdolWorkbook(file) {
+  if (!file) return;
+  const previousState = JSON.parse(JSON.stringify(state));
+  try {
+    const xmlFiles = await unzipWorkbook(await file.arrayBuffer());
+    const parser = new DOMParser();
+    const sharedDoc = parser.parseFromString(xmlFiles.get("xl/sharedStrings.xml") || "<sst/>", "application/xml");
+    const sharedStrings = [...sharedDoc.querySelectorAll("si")].map((node) => [...node.querySelectorAll("t")].map((text) => text.textContent).join(""));
+    const attendance = parseActivityRows(worksheetRows(xmlFiles, parser, sharedStrings, "활동기록"), "", "출근");
+    const schedules = parseScheduleRows(worksheetRows(xmlFiles, parser, sharedStrings, "일정표"));
+    if (!attendance.length) throw new Error("활동기록 시트에서 가져올 출퇴근 기록을 찾을 수 없습니다.");
+    if (!schedules.length) throw new Error("일정표 시트에서 가져올 일정을 찾을 수 없습니다.");
 
-function sheetRow(rowIndex, cells) {
-  return `<row r="${rowIndex}">${cells.map((cell, index) => sheetCell(rowIndex, index + 1, cell)).join("")}</row>`;
+    const group = detectIdolGroup(attendance, schedules);
+    const user = currentUser();
+    group.seed();
+    state.currentUserId = user.id;
+    state.attendance = attendance;
+    state.schedules = schedules;
+
+    const paymentRows = worksheetRows(xmlFiles, parser, sharedStrings, "결제내역");
+    const expenses = parseExpenseRows(paymentRows, file.name);
+    if (!expenses.length) throw new Error("결제내역 시트에서 가져올 식비 결제를 찾을 수 없습니다.");
+    state.expenses = expenses;
+
+    const dates = [...attendance.map((row) => row.date), ...schedules.map((row) => row.date), ...expenses.map((row) => row.date)].filter(Boolean).sort();
+    state.periodStart = dates[0] || state.periodStart;
+    state.periodEnd = dates.at(-1) || state.periodEnd;
+    state.integrationStatus = {
+      attendance: `${file.name}, ${attendance.length}건`,
+      schedule: `${file.name}, ${schedules.length}건`,
+      expense: `${file.name}, ${expenses.length}건`,
+    };
+    refreshAutomaticApprovalStatuses();
+    addAudit("다른 아이돌 .xlsx 연동", `${file.name}에서 ${group.name} 출퇴근 ${attendance.length}건, 일정 ${schedules.length}건, 식비 ${expenses.length}건을 가져왔습니다.`, user);
+    syncInputs();
+    render();
+  } catch (error) {
+    Object.assign(state, previousState);
+    addAudit("다른 아이돌 .xlsx 연동 실패", `${file.name}: ${error.message || "알 수 없는 오류"}`);
+    alert(`다른 아이돌 .xlsx 연동에 실패했습니다.\n${error.message || "파일 형식을 확인해 주세요."}`);
+    render();
+  }
 }
 
 function inPeriod(dateText) {
@@ -946,7 +916,7 @@ function syncInputs() {
   els.currentUser.innerHTML = INTERNAL_USERS.map((user) => `<option value="${user.id}" ${state.currentUserId === user.id ? "selected" : ""}>${user.id}, ${user.name}, ${user.role}</option>`).join("");
   const user = currentUser();
   const scopeNotice = isFoodOnlyUser(user) ? `, 담당 아이돌: ${user.assignedGroupLabel || user.assignedGroup}, 업무 범위: 담당 아이돌 식비 정산 전용` : "";
-  els.authNotice.textContent = `${user.name} 계정으로 작업 중입니다. 입력 권한 ${user.canEdit ? "있음" : "없음"}, 출력 권한 ${user.canExport ? "있음" : "없음"}, 승인 권한 ${user.canApprove ? "있음" : "없음"}, 로그 열람 ${user.canViewAudit ? "가능" : "불가"}${scopeNotice}`;
+  els.authNotice.textContent = `${user.name} 계정으로 작업 중입니다. 입력 권한 ${user.canEdit ? "있음" : "없음"}, 다른 아이돌 연동 ${canSwitchIdol(user) ? "가능" : "불가"}, 승인 권한 ${user.canApprove ? "있음" : "없음"}, 로그 열람 ${user.canViewAudit ? "가능" : "불가"}${scopeNotice}`;
   els.groupName.value = state.groupName;
   els.periodStart.value = state.periodStart;
   els.periodEnd.value = state.periodEnd;
@@ -1194,11 +1164,11 @@ function normalizeState() {
     log.actor = String(log.actor || "").replaceAll("정산 담당자", "현장 매니저");
     log.action = String(log.action || "")
       .replaceAll("Excel 연동", ".xlsx Import")
-      .replaceAll("Excel 출력", ".xlsx Export");
+      .replaceAll("Excel 출력", "이전 버전 파일 출력");
     log.detail = String(log.detail || "")
       .replaceAll("정산 담당자", "현장 매니저")
       .replaceAll("Excel 연동", ".xlsx Import")
-      .replaceAll("Excel 출력", ".xlsx Export");
+      .replaceAll("Excel 출력", "이전 버전 파일 출력");
   });
 }
 
@@ -1483,9 +1453,7 @@ function applyRoleVisibility() {
     element.hidden = !canViewMarketingPayroll(user);
   });
   els.auditPanel.hidden = !user.canViewAudit;
-  els.exportButton.hidden = !user.canExport;
   els.importIdolButton.hidden = !canSwitchIdol(user);
-  els.importIdolButton.textContent = state.groupName === "삼데헌" ? "삼일돌 연동" : "다른 아이돌 연동";
   document.querySelectorAll("[data-integration-import]").forEach((button) => {
     button.disabled = !isHrMaster(user);
     button.title = isHrMaster(user) ? ".xlsx 파일을 선택해 데이터를 Import합니다." : "인사 마스터 전용 기능입니다.";
@@ -1560,188 +1528,6 @@ function updateSettings() {
   state.companyRate = Number(els.companyRate.value || 0);
   refreshAutomaticApprovalStatuses();
   render();
-}
-
-function sectionRows(title, headers, rows) {
-  return [[{ value: title, style: 5 }], headers.map((value) => ({ value, style: 3 })), ...rows, []];
-}
-
-function workbookRows() {
-  const showMarketingPayroll = canViewMarketingPayroll();
-  const summary = [
-    [{ value: "Food-Fee 정산 결과", style: 1 }],
-    [{ value: "그룹명", style: 2 }, { value: state.groupName }],
-    [{ value: "정산 기간", style: 2 }, { value: `${state.periodStart} ~ ${state.periodEnd}` }],
-    [{ value: "1인 승인 기준", style: 2 }, { value: state.approvalLimit, style: 4 }],
-    [{ value: "동시간대 결제 승인 기준", style: 2 }, { value: `${state.concurrentApprovalCount}건/동일 시간대` }],
-    [{ value: "공통 매출 풀", style: 2 }, { value: commonRevenuePool(), style: 4 }],
-    [{ value: "회사 분배금", style: 2 }, { value: companyShareAmount(), style: 4 }],
-    [{ value: "지급률 합계", style: 2 }, { value: contractRateTotal(), style: 4 }],
-    ...(showMarketingPayroll ? [[{ value: "마케팅 급여 상계 합계", style: 2 }, { value: totalMarketingOffset(), style: 4 }]] : []),
-    [],
-  ];
-  const revenueRows = state.revenueItems.map((item) => [
-    { value: item.date }, { value: item.title }, { value: item.type }, { value: item.amount, style: 4 },
-    { value: item.participants.join(", ") }, { value: settlementMembers(item.participants).length, style: 4 },
-  ]);
-  const memberRows = state.members.map((member) => {
-    const calc = calculateMember(member);
-    return [
-      { value: member.name }, { value: member.role }, { value: calc.revenue.commonPayout, style: 4 },
-      { value: calc.revenue.individual, style: 4 }, { value: calc.revenue.individualPayout, style: 4 }, { value: member.rate, style: 4 }, { value: contractLine(member) }, { value: calc.mealCount, style: 4 },
-      { value: calc.gross, style: 4 }, { value: calc.food, style: 4 },
-      ...(showMarketingPayroll ? [{ value: calc.marketing, style: 4 }] : []),
-      { value: calc.net, style: 4 },
-    ];
-  });
-  const marketingRows = state.marketingPayroll.flatMap((employee) => {
-    const totalHours = marketingEmployeeTotalHours(employee);
-    return state.members
-      .filter((member) => !EXCLUDED_ROLES.has(member.role))
-      .map((member) => [
-        { value: employee.name }, { value: employee.role }, { value: employee.monthlySalary, style: 4 },
-        { value: member.name }, { value: Number(employee.hours?.[member.name] || 0), style: 4 },
-        { value: totalHours, style: 4 }, { value: marketingAllocation(employee, member.name), style: 4 },
-      ]);
-  });
-  const contractRows = state.members.map((member) => {
-    const contract = member.contract || fallbackContract(member);
-    return [
-      { value: member.name }, { value: member.role }, { value: member.rate, style: 4 }, { value: contract.contractType },
-      { value: contract.popularityTier }, { value: contract.traineeCost }, { value: contract.companyInvestment },
-      { value: contract.rateBasis }, { value: contract.specialClause },
-    ];
-  });
-  const expenseRows = state.expenses.map((expense) => [
-    { value: expense.date }, { value: expense.transactionTime }, { value: expense.amount, style: 4 },
-    { value: expense.participants.join(", ") }, { value: expense.skippedParticipants.join(", ") }, { value: expense.separateMealParticipants.join(", ") },
-    { value: expense.excluded.join(", ") }, { value: billableParticipants(expense).join(", ") },
-    { value: expenseShare(expense), style: 4 }, { value: expenseStatus(expense), style: ["승인 대기", "보류"].includes(expenseStatus(expense)) ? 7 : 6 },
-    { value: expenseApprovalReasons(expense).join(", ") }, { value: expense.approver }, { value: expense.isExceptional ? "특이" : "일반" }, { value: expense.exceptionNote },
-  ]);
-  const approvalRows = state.expenses
-    .filter((expense) => ["승인 대기", "보류", "반려"].includes(expenseStatus(expense)))
-    .map((expense) => [
-      { value: expense.date }, { value: expense.transactionTime }, { value: expense.amount, style: 4 },
-      { value: expenseShare(expense), style: 4 }, { value: expenseStatus(expense), style: 7 },
-      { value: expenseApprovalReasons(expense).join(", ") }, { value: expense.approver },
-    ]);
-  const activityRows = state.attendance.map((row) => [{ value: row.date }, { value: row.member }, { value: row.status }]);
-  const scheduleRows = state.schedules.map((row) => [{ value: row.date }, { value: row.title }, { value: row.members.join(", ") }]);
-  const auditRows = state.auditLogs.map((log) => [{ value: log.at }, { value: log.actorId || "" }, { value: log.actorRole || "" }, { value: log.actor }, { value: log.action }, { value: log.detail }]);
-  const auditSection = currentUser().canViewAudit
-    ? sectionRows("감사 로그", ["일시", "작업자 ID", "권한", "작업자", "작업", "내용"], auditRows)
-    : [];
-  return [
-    ...summary,
-    ...sectionRows("매출 항목", ["날짜", "내역", "구분", "금액", "참여 멤버", "정산 대상 수"], revenueRows),
-    ...sectionRows("멤버별 정산", ["멤버", "역할", "공통 매출 정산금", "개인 매출 원금", "개인 매출 정산금", "계약 지급률", "계약 근거", "식비 건수", "공제 전", "식비 공제", ...(showMarketingPayroll ? ["마케팅 급여 상계"] : []), "공제 후"], memberRows),
-    ...(showMarketingPayroll ? sectionRows("마케팅 급여 배부", ["직원", "직무", "월 급여", "대상 아이돌", "투입시간", "직원 총 투입시간", "배부액"], marketingRows) : []),
-    ...sectionRows("계약서 참조", ["멤버", "역할", "계약 지급률", "계약 유형", "개인 활동 기여도", "연습생 생활비", "회사 투자", "지급률 근거", "특약"], contractRows),
-    ...sectionRows("비용별 분배", ["날짜", "결제 시간", "실제 식비", "예상 식사인원", "식사 생략 인원", "별도 식사 인원", "기타 정산 제외", "정산 대상", "1인 금액", "상태", "승인 사유", "승인권자", "특이 체크", "비고(사유)"], expenseRows),
-    ...sectionRows("승인 필요 건", ["날짜", "결제 시간", "금액", "1인 금액", "상태", "승인 사유", "승인권자"], approvalRows),
-    ...sectionRows("활동 기록", ["날짜", "멤버", "상태"], activityRows),
-    ...sectionRows("일정표", ["날짜", "일정명", "참여 멤버"], scheduleRows),
-    ...auditSection,
-  ];
-}
-
-function worksheetXml() {
-  const rows = workbookRows();
-  const rowXml = rows.map((row, index) => sheetRow(index + 1, row)).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-    <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-      <cols>
-        <col min="1" max="1" width="18" customWidth="1"/>
-        <col min="2" max="2" width="24" customWidth="1"/>
-        <col min="3" max="14" width="18" customWidth="1"/>
-      </cols>
-      <sheetData>${rowXml}</sheetData>
-    </worksheet>`;
-}
-
-function stylesXml() {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-    <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-      <numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0"/></numFmts>
-      <fonts count="4">
-        <font><sz val="11"/><name val="Malgun Gothic"/></font>
-        <font><b/><sz val="16"/><name val="Malgun Gothic"/></font>
-        <font><b/><sz val="11"/><name val="Malgun Gothic"/></font>
-        <font><b/><color rgb="FF9A5B00"/><sz val="11"/><name val="Malgun Gothic"/></font>
-      </fonts>
-      <fills count="6">
-        <fill><patternFill patternType="none"/></fill>
-        <fill><patternFill patternType="gray125"/></fill>
-        <fill><patternFill patternType="solid"><fgColor rgb="FFD9EDF2"/><bgColor indexed="64"/></patternFill></fill>
-        <fill><patternFill patternType="solid"><fgColor rgb="FFEAF3F6"/><bgColor indexed="64"/></patternFill></fill>
-        <fill><patternFill patternType="solid"><fgColor rgb="FFF2F6F8"/><bgColor indexed="64"/></patternFill></fill>
-        <fill><patternFill patternType="solid"><fgColor rgb="FFFFF0D7"/><bgColor indexed="64"/></patternFill></fill>
-      </fills>
-      <borders count="2">
-        <border><left/><right/><top/><bottom/><diagonal/></border>
-        <border><left style="thin"><color rgb="FFD9E1E5"/></left><right style="thin"><color rgb="FFD9E1E5"/></right><top style="thin"><color rgb="FFD9E1E5"/></top><bottom style="thin"><color rgb="FFD9E1E5"/></bottom><diagonal/></border>
-      </borders>
-      <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-      <cellXfs count="8">
-        <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/>
-        <xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
-        <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
-        <xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
-        <xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>
-        <xf numFmtId="0" fontId="2" fillId="4" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
-        <xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>
-        <xf numFmtId="0" fontId="3" fillId="5" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>
-      </cellXfs>
-      <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
-    </styleSheet>`;
-}
-
-function buildXlsxBytes() {
-  return makeZip([
-    { name: "[Content_Types].xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>` },
-    { name: "_rels/.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
-    { name: "xl/workbook.xml", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Food-Fee 정산" sheetId="1" r:id="rId1"/></sheets></workbook>` },
-    { name: "xl/_rels/workbook.xml.rels", content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
-    { name: "xl/worksheets/sheet1.xml", content: worksheetXml() },
-    { name: "xl/styles.xml", content: stylesXml() },
-  ]);
-}
-
-function exportWorkbook() {
-  if (!ensureAuthenticated()) return;
-  const user = currentUser();
-  if (!user.canExport) {
-    addAudit("Export 차단", `${user.name} 계정은 .xlsx Export 권한이 없습니다.`, user);
-    alert("현재 계정은 .xlsx Export 권한이 없습니다.");
-    render();
-    return;
-  }
-  if (!hasValidContractRateTotal()) {
-    addAudit(".xlsx Export 차단", `회사 지급률과 멤버별 계약 지급률 합계가 ${contractRateTotal()}%입니다. 합계 100%가 필요합니다.`, user);
-    alert(`지급률 합계를 100%로 맞춰 주세요.\n현재 합계: ${contractRateTotal()}%`);
-    render();
-    return;
-  }
-  const missingExceptionReason = state.expenses.find((expense) => expense.isExceptional && !expense.exceptionNote.trim());
-  if (missingExceptionReason) {
-    addAudit(".xlsx Export 차단", `${missingExceptionReason.date} ${missingExceptionReason.title}: 특이 체크된 식비의 비고(사유)가 입력되지 않았습니다.`, user);
-    alert(`특이 체크된 식비의 비고(사유)를 입력해 주세요.\n${missingExceptionReason.date} ${missingExceptionReason.title}`);
-    render();
-    return;
-  }
-  addAudit(".xlsx Export", `${state.groupName} ${state.periodStart}~${state.periodEnd} 정산 근거 파일을 출력했습니다.`, user);
-  const workbook = buildXlsxBytes();
-  const blob = new Blob([workbook], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  const safeGroupName = state.groupName.replace(/[\\/:*?"<>|]/g, "_") || "Food-Fee";
-  a.href = url;
-  a.download = `${safeGroupName}_Food-Fee_${state.periodStart}_${state.periodEnd}.xlsx`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }
 
 document.addEventListener("submit", (event) => {
@@ -1961,6 +1747,15 @@ document.addEventListener("change", (event) => {
       delete target.dataset.integrationType;
     });
   }
+  if (target === els.externalIdolInput) {
+    if (!ensureIdolImportPermission()) {
+      target.value = "";
+      return;
+    }
+    importIdolWorkbook(target.files?.[0]).finally(() => {
+      target.value = "";
+    });
+  }
 });
 
 document.addEventListener("click", (event) => {
@@ -1973,21 +1768,10 @@ document.addEventListener("click", (event) => {
     showLogin();
     return;
   }
-  if (target.id === "exportButton") exportWorkbook();
   if (target.id === "importIdolButton") {
-    const user = currentUser();
-    if (!ensureAuthenticated()) return;
-    if (!canSwitchIdol(user)) {
-      addAudit("다른 아이돌 연동 차단", `${user.name} 계정에는 아이돌 전환 권한이 없습니다.`, user);
-      alert("다른 아이돌 연동은 상위 매니저와 인사 마스터만 사용할 수 있습니다.");
-      render();
-      return;
-    }
-    const nextGroup = state.groupName === "삼데헌" ? "Samildol" : "삼데헌";
-    if (nextGroup === "삼데헌") seedOtherIdolData();
-    else seedData();
-    addAudit("다른 아이돌 연동", `${actorLabel(user)} 계정이 ${nextGroup} 데이터를 불러왔습니다.`, user);
-    render();
+    if (!ensureIdolImportPermission()) return;
+    els.externalIdolInput.value = "";
+    els.externalIdolInput.click();
     return;
   }
   if (target.dataset.integrationImport) {
@@ -2002,8 +1786,8 @@ document.addEventListener("click", (event) => {
     if (!expense || !ensureApprovalPermission(`${expense?.title || "식비"} 승인`)) return;
     const user = currentUser();
     if (!hasAllPermissions(user)) {
-      addAudit("승인 차단", `${expense.title}: 입력, 출력, 승인 모든 권한을 가진 계정만 승인할 수 있습니다.`, user);
-      alert("입력, 출력, 승인 모든 권한을 가진 계정만 승인할 수 있습니다.");
+      addAudit("승인 차단", `${expense.title}: 입력, 승인, 감사 로그 열람 등 모든 권한을 가진 계정만 승인할 수 있습니다.`, user);
+      alert("입력, 승인, 감사 로그 열람 등 모든 권한을 가진 계정만 승인할 수 있습니다.");
       render();
       return;
     }
