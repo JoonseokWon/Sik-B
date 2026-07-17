@@ -647,16 +647,20 @@ function createRevenue(date, title, type, amount, participants) {
 
 function defaultMarketingPayroll() {
   return [
-    { id: makeId(), name: "Kim Ara", role: "마케팅 팀장", monthlySalary: 4500000, hours: { Haru: 34, Min: 24, Seo: 20, Lia: 14, Noa: 8 } },
-    { id: makeId(), name: "Lee Jun", role: "콘텐츠 마케터", monthlySalary: 3800000, hours: { Haru: 18, Min: 30, Seo: 26, Lia: 16, Noa: 10 } },
-    { id: makeId(), name: "Choi Mina", role: "퍼포먼스 마케터", monthlySalary: 3400000, hours: { Haru: 12, Min: 16, Seo: 22, Lia: 28, Noa: 22 } },
+    { id: makeId(), name: "Kim Ara", role: "마케팅 팀장", monthlySalary: 4500000, nonIdolHours: 60, hours: { Haru: 34, Min: 24, Seo: 20, Lia: 14, Noa: 8 } },
+    { id: makeId(), name: "Lee Jun", role: "콘텐츠 마케터", monthlySalary: 3800000, nonIdolHours: 60, hours: { Haru: 18, Min: 30, Seo: 26, Lia: 16, Noa: 10 } },
+    { id: makeId(), name: "Choi Mina", role: "퍼포먼스 마케터", monthlySalary: 3400000, nonIdolHours: 60, hours: { Haru: 12, Min: 16, Seo: 22, Lia: 28, Noa: 22 } },
   ];
 }
 
-function marketingEmployeeTotalHours(employee) {
+function marketingEmployeeIdolHours(employee) {
   return state.members
     .filter((member) => !EXCLUDED_ROLES.has(member.role))
     .reduce((sum, member) => sum + Math.max(0, Number(employee.hours?.[member.name] || 0)), 0);
+}
+
+function marketingEmployeeTotalHours(employee) {
+  return marketingEmployeeIdolHours(employee) + Math.max(0, Number(employee.nonIdolHours || 0));
 }
 
 function marketingAllocations(employee) {
@@ -664,11 +668,12 @@ function marketingAllocations(employee) {
   const totalHours = marketingEmployeeTotalHours(employee);
   if (!totalHours) return Object.fromEntries(members.map((member) => [member.name, 0]));
   const salary = Math.max(0, Math.round(Number(employee.monthlySalary || 0)));
+  const allocatedTarget = Math.round(salary * marketingEmployeeIdolHours(employee) / totalHours);
   const allocations = members.map((member, index) => {
     const raw = salary * Math.max(0, Number(employee.hours?.[member.name] || 0)) / totalHours;
     return { name: member.name, amount: Math.floor(raw), remainder: raw - Math.floor(raw), index };
   });
-  let remaining = salary - allocations.reduce((sum, item) => sum + item.amount, 0);
+  let remaining = allocatedTarget - allocations.reduce((sum, item) => sum + item.amount, 0);
   [...allocations]
     .sort((a, b) => b.remainder - a.remainder || a.index - b.index)
     .forEach((item) => {
@@ -684,6 +689,11 @@ function marketingAllocation(employee, memberName) {
   return marketingAllocations(employee)[memberName] || 0;
 }
 
+function marketingUnallocatedSalary(employee) {
+  const allocated = Object.values(marketingAllocations(employee)).reduce((sum, amount) => sum + amount, 0);
+  return Math.max(0, Math.round(Number(employee.monthlySalary || 0)) - allocated);
+}
+
 function marketingCostForMember(memberName) {
   return state.marketingPayroll.reduce((sum, employee) => sum + marketingAllocation(employee, memberName), 0);
 }
@@ -692,6 +702,10 @@ function totalMarketingOffset() {
   return state.members
     .filter((member) => !EXCLUDED_ROLES.has(member.role))
     .reduce((sum, member) => sum + marketingCostForMember(member.name), 0);
+}
+
+function totalMarketingUnallocated() {
+  return state.marketingPayroll.reduce((sum, employee) => sum + marketingUnallocatedSalary(employee), 0);
 }
 
 function createContract(popularityTier, traineeCost, companyInvestment, rateBasis, specialClause) {
@@ -1068,8 +1082,8 @@ function seedOtherIdolData() {
     createExpense("2026-07-25", "팬미팅 리허설 저녁", 126000, "19:05"),
   ];
   state.marketingPayroll = [
-    { id: makeId(), name: "Han Sora", role: "마케팅 팀장", monthlySalary: 4600000, hours: { "원준석": 32, "장현우": 24, "김진현": 20, "이준영": 16 } },
-    { id: makeId(), name: "Oh Jin", role: "콘텐츠 마케터", monthlySalary: 3700000, hours: { "원준석": 18, "장현우": 26, "김진현": 30, "이준영": 22 } },
+    { id: makeId(), name: "Han Sora", role: "마케팅 팀장", monthlySalary: 4600000, nonIdolHours: 68, hours: { "원준석": 32, "장현우": 24, "김진현": 20, "이준영": 16 } },
+    { id: makeId(), name: "Oh Jin", role: "콘텐츠 마케터", monthlySalary: 3700000, nonIdolHours: 64, hours: { "원준석": 18, "장현우": 26, "김진현": 30, "이준영": 22 } },
   ];
   state.marketingInitialized = true;
   state.auditLogs = [];
@@ -1156,6 +1170,10 @@ function normalizeState() {
     Object.keys(employee.hours).forEach((memberName) => {
       employee.hours[memberName] = Math.max(0, Number(employee.hours[memberName] || 0));
     });
+    const idolHours = marketingEmployeeIdolHours(employee);
+    employee.nonIdolHours = employee.nonIdolHours == null
+      ? Math.max(0, 160 - idolHours)
+      : Math.max(0, Number(employee.nonIdolHours || 0));
   });
   state.attendance = Array.isArray(state.attendance) ? state.attendance : [];
   state.schedules = Array.isArray(state.schedules) ? state.schedules : [];
@@ -1338,7 +1356,10 @@ function renderMarketingPayroll() {
         <th>직무</th>
         <th>월 급여</th>
         ${settlementMemberList.map((member) => `<th>${escapeHtml(member.name)} 투입시간</th>`).join("")}
-        <th>총 투입시간</th>
+        <th>아이돌 투입시간</th>
+        <th>비아이돌 업무시간</th>
+        <th>전체 업무시간</th>
+        <th>비배부 급여</th>
         <th></th>
       </tr>
     </thead>
@@ -1349,7 +1370,10 @@ function renderMarketingPayroll() {
           <td><input value="${escapeHtml(employee.role)}" data-marketing-field="role" data-id="${employee.id}" aria-label="마케팅 직무"></td>
           <td><input type="number" min="0" step="100000" value="${employee.monthlySalary}" data-marketing-field="monthlySalary" data-id="${employee.id}" aria-label="${escapeHtml(employee.name)} 월 급여"></td>
           ${settlementMemberList.map((member) => `<td><input type="number" min="0" step="0.5" value="${Number(employee.hours?.[member.name] || 0)}" data-marketing-hour="${escapeHtml(member.name)}" data-id="${employee.id}" aria-label="${escapeHtml(employee.name)} ${escapeHtml(member.name)} 투입시간"></td>`).join("")}
+          <td class="money">${marketingEmployeeIdolHours(employee)}시간</td>
+          <td><input type="number" min="0" step="0.5" value="${Number(employee.nonIdolHours || 0)}" data-marketing-field="nonIdolHours" data-id="${employee.id}" aria-label="${escapeHtml(employee.name)} 비아이돌 업무시간"></td>
           <td class="money">${marketingEmployeeTotalHours(employee)}시간</td>
+          <td class="money">${currency.format(marketingUnallocatedSalary(employee))}</td>
           <td><button class="remove" type="button" data-remove-marketing="${employee.id}" aria-label="마케팅 직원 삭제">x</button></td>
         </tr>
       `).join("")}
@@ -1362,7 +1386,12 @@ function renderMarketingPayroll() {
       <span>${escapeHtml(member.name)} 마케팅 급여 상계</span>
       <strong>${currency.format(marketingCostForMember(member.name))}</strong>
     </article>
-  `).join("");
+  `).join("") + `
+    <article>
+      <span>아이돌 비배부 급여 합계</span>
+      <strong>${currency.format(totalMarketingUnallocated())}</strong>
+    </article>
+  `;
   els.marketingRows.innerHTML = "";
   els.marketingRows.appendChild(table);
   els.marketingRows.appendChild(allocations);
@@ -1700,8 +1729,12 @@ document.addEventListener("change", (event) => {
     const employee = state.marketingPayroll.find((item) => item.id === target.dataset.id);
     const field = target.dataset.marketingField;
     const previous = employee[field];
-    employee[field] = field === "monthlySalary" ? Math.max(0, Math.round(Number(target.value || 0))) : target.value;
-    const fieldLabel = { name: "직원명", role: "직무", monthlySalary: "월 급여" }[field] || field;
+    employee[field] = field === "monthlySalary"
+      ? Math.max(0, Math.round(Number(target.value || 0)))
+      : field === "nonIdolHours"
+        ? Math.max(0, Number(target.value || 0))
+        : target.value;
+    const fieldLabel = { name: "직원명", role: "직무", monthlySalary: "월 급여", nonIdolHours: "비아이돌 업무시간" }[field] || field;
     addAudit("마케팅 급여 수정", `${employee.name} ${fieldLabel}: ${previous} -> ${employee[field]}`);
     render();
   }
@@ -1830,7 +1863,7 @@ document.addEventListener("click", (event) => {
   if (target.id === "addMarketingButton") {
     if (!ensureGeneralEditPermission("마케팅 직원 추가")) return;
     const hours = Object.fromEntries(state.members.filter((member) => !EXCLUDED_ROLES.has(member.role)).map((member) => [member.name, 0]));
-    state.marketingPayroll.push({ id: makeId(), name: "새 마케팅 직원", role: "마케팅 담당", monthlySalary: 0, hours });
+    state.marketingPayroll.push({ id: makeId(), name: "새 마케팅 직원", role: "마케팅 담당", monthlySalary: 0, nonIdolHours: 160, hours });
     addAudit("마케팅 직원 추가", "마케팅 급여 테이블에 새 직원을 추가했습니다.");
     render();
   }
