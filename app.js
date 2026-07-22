@@ -148,6 +148,8 @@ function isAuthenticated() {
 }
 
 function showLogin(message = "") {
+  document.body.classList.add("auth-locked");
+  document.querySelector(".app-shell")?.setAttribute("inert", "");
   els.loginUserId.innerHTML = INTERNAL_USERS.map((user) => `<option value="${user.id}">${user.id}, ${user.name}</option>`).join("");
   els.loginUserId.value = state.currentUserId || INTERNAL_USERS[0].id;
   els.loginPassword.value = "";
@@ -158,6 +160,8 @@ function showLogin(message = "") {
 
 function hideLogin() {
   els.loginOverlay.classList.add("hidden");
+  document.body.classList.remove("auth-locked");
+  document.querySelector(".app-shell")?.removeAttribute("inert");
   els.loginError.textContent = "";
 }
 
