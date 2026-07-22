@@ -761,6 +761,7 @@ function createExpense(date, title, amount, transactionTime = "12:00") {
     separateMealParticipants: [],
     approver: "인사 마스터",
     approvalMemo: "",
+    approvalDecisionMade: false,
     recommendationNote: "더미 활동/일정 기준으로 생성됨",
     isExceptional: false,
     specialMealAmounts: {},
@@ -952,6 +953,7 @@ function expenseNeedsApproval(expense) {
 }
 
 function defaultApprovalStatus(expense) {
+  if (expense.isExceptional) return "승인 대기";
   if (settlementParticipants(expense).length === 0) return "보류";
   if (hasInvalidSpecialMealAllocation(expense)) return "승인 대기";
   return expenseNeedsApproval(expense) ? "승인 대기" : "자동 처리";
@@ -959,6 +961,11 @@ function defaultApprovalStatus(expense) {
 
 function expenseStatus(expense) {
   return expense.approvalStatus || defaultApprovalStatus(expense);
+}
+
+function resetExpenseApprovalStatus(expense) {
+  expense.approvalDecisionMade = false;
+  expense.approvalStatus = defaultApprovalStatus(expense);
 }
 
 function isExpenseReadyForSettlement(expense) {
@@ -1119,7 +1126,7 @@ function syncExpenseRecommendation(expense) {
   expense.skippedParticipants = (expense.skippedParticipants || []).filter((name) => participants.includes(name));
   expense.separateMealParticipants = (expense.separateMealParticipants || []).filter((name) => participants.includes(name));
   expense.specialMealAmounts = Object.fromEntries(Object.entries(expense.specialMealAmounts || {}).filter(([name]) => participants.includes(name)));
-  expense.approvalStatus = defaultApprovalStatus(expense);
+  resetExpenseApprovalStatus(expense);
   expense.recommendationNote = `활동 기록/일정표 기준 ${participants.length}명 적용`;
   addAudit("예상 식사인원 적용", `${expense.date} ${expense.title}: ${previous || "없음"} -> ${participants.join(", ") || "예상 없음"}`);
 }
@@ -1360,6 +1367,10 @@ function normalizeState() {
       : {};
     if (!expense.isExceptional) expense.specialMealAmounts = {};
     expense.exceptionNote = String(expense.exceptionNote || "");
+    expense.approvalDecisionMade = Boolean(expense.approvalDecisionMade);
+    if (expense.isExceptional && expense.approvalStatus === "보류" && !expense.approvalDecisionMade) {
+      expense.approvalStatus = "승인 대기";
+    }
   });
   refreshAutomaticApprovalStatuses();
   state.marketingPayroll = Array.isArray(state.marketingPayroll) ? state.marketingPayroll : [];
@@ -1854,7 +1865,7 @@ document.addEventListener("change", (event) => {
     if (target.dataset.field === "role") {
       state.expenses.forEach((expense) => {
         expense.excluded = defaultExcluded(expense.participants);
-        expense.approvalStatus = defaultApprovalStatus(expense);
+        resetExpenseApprovalStatus(expense);
       });
     }
     addAudit("멤버 정보 수정", `${member.name} ${target.dataset.field}: ${previous} -> ${member[target.dataset.field]}`);
@@ -1882,6 +1893,7 @@ document.addEventListener("change", (event) => {
       }
       const user = currentUser();
       expense.approvalStatus = target.value;
+      expense.approvalDecisionMade = true;
       expense.approver = user.name;
       refreshAutomaticApprovalStatuses();
       const nextStatus = expense.approvalStatus;
@@ -1910,7 +1922,7 @@ document.addEventListener("change", (event) => {
     } else if (field === "excluded") expense.excluded = splitNames(target.value);
     else expense[field] = target.value;
     if (["amount", "isExceptional", "participants", "excluded", "date", "transactionTime"].includes(field) && field !== "approvalStatus") {
-      expense.approvalStatus = defaultApprovalStatus(expense);
+      resetExpenseApprovalStatus(expense);
     }
     if (field === "date") expense.recommendationNote = "날짜가 바뀌었습니다. 불러오기를 누르면 다시 계산됩니다.";
     if (field === "participants") expense.recommendationNote = "직접 수정됨";
@@ -1934,7 +1946,7 @@ document.addEventListener("change", (event) => {
     expense.specialMealAmounts = expense.specialMealAmounts && typeof expense.specialMealAmounts === "object" ? expense.specialMealAmounts : {};
     if (target.value === "") delete expense.specialMealAmounts[memberName];
     else expense.specialMealAmounts[memberName] = parseMoneyInput(target.value);
-    expense.approvalStatus = defaultApprovalStatus(expense);
+    resetExpenseApprovalStatus(expense);
     addAudit(
       "특이 개별 식비 수정",
       `${expense.date} ${expense.title}: ${memberName} ${previous == null ? "미입력" : currency.format(previous)} -> ${expense.specialMealAmounts[memberName] == null ? "N빵 대상" : currency.format(expense.specialMealAmounts[memberName])}, 나머지 ${regularBillableParticipants(expense).length}명 1인 ${currency.format(expenseShare(expense))}`,
@@ -1958,7 +1970,7 @@ document.addEventListener("change", (event) => {
       expense.exceptionNote = "";
       if (!expense.skippedParticipants.length && !expense.separateMealParticipants.length && !specialMealAmountEntries(expense).length) setExpenseExceptional(expense, false);
     }
-    expense.approvalStatus = defaultApprovalStatus(expense);
+    resetExpenseApprovalStatus(expense);
     addAudit(
       "식사 생략 인원 수정",
       `${expense.date} ${expense.title}: ${memberName} ${target.checked ? "식사 생략" : "식사 생략 해제"}, 정산 대상 ${billableParticipants(expense).length}명, 1인 ${currency.format(expenseShare(expense))}`,
@@ -1981,7 +1993,7 @@ document.addEventListener("change", (event) => {
       expense.exceptionNote = "";
       if (!expense.skippedParticipants.length && !expense.separateMealParticipants.length && !specialMealAmountEntries(expense).length) setExpenseExceptional(expense, false);
     }
-    expense.approvalStatus = defaultApprovalStatus(expense);
+    resetExpenseApprovalStatus(expense);
     addAudit(
       "별도 식사 인원 수정",
       `${expense.date} ${expense.title}: ${memberName} ${target.checked ? "공통 식비 배분 제외, 특이 개별 식비 입력 가능" : "별도 식사 해제"}, 정산 대상 ${settlementParticipants(expense).length}명, 일반 1인 ${currency.format(expenseShare(expense))}`,
