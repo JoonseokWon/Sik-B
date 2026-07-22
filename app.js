@@ -4,7 +4,7 @@ const currency = new Intl.NumberFormat("ko-KR", {
   maximumFractionDigits: 0,
 });
 
-const DATA_VERSION = 17;
+const DATA_VERSION = 18;
 const ROLES = ["멤버", "매니저", "스태프", "게스트"];
 const EXCLUDED_ROLES = new Set(["매니저", "스태프", "게스트"]);
 const REVENUE_TYPES = ["공통 매출", "개인 매출"];
@@ -201,7 +201,8 @@ function addAudit(action, detail, user = currentUser()) {
 function ensureEditPermission(action) {
   if (!ensureAuthenticated()) return false;
   const user = currentUser();
-  if (user.canEdit) return true;
+  if (user.canEdit && ensureAssignedGroupScope(action, user)) return true;
+  if (user.canEdit) return false;
   addAudit("입력 차단", `${action}: ${user.name} 계정은 입력 권한이 없습니다.`, user);
   alert("현재 계정은 입력 권한이 없습니다.");
   render();
@@ -254,6 +255,17 @@ function isFoodOnlyUser(user = currentUser()) {
   return user.role === "현장 매니저";
 }
 
+function ensureAssignedGroupScope(action, user = currentUser()) {
+  if (!isFoodOnlyUser(user) || !user.assignedGroup || state.groupName === user.assignedGroup) return true;
+  const attemptedGroup = state.groupName || "그룹 미지정";
+  state.groupName = user.assignedGroup;
+  if (els.groupName) els.groupName.value = user.assignedGroup;
+  addAudit("담당 아이돌 권한 차단", `${action}: ${user.name} 계정은 ${user.assignedGroupLabel || user.assignedGroup}만 입력할 수 있습니다. ${attemptedGroup} 데이터에는 저장하지 않았습니다.`, user);
+  alert(`권한 없음: ${user.assignedGroupLabel || user.assignedGroup} 담당 계정은 다른 아이돌 데이터를 입력하거나 저장할 수 없습니다.`);
+  setSaveStatus("error", `권한 없음, 담당 아이돌 ${user.assignedGroupLabel || user.assignedGroup}만 입력 가능`);
+  return false;
+}
+
 function canViewMarketingPayroll(user = currentUser()) {
   return user.canViewMarketingPayroll === true;
 }
@@ -302,6 +314,8 @@ function queueServerSave(serialized, groupName) {
 }
 
 function persistState() {
+  const user = authenticatedUser();
+  if (user && !ensureAssignedGroupScope("데이터 저장", user)) return false;
   if (!hasValidContractRateTotal()) {
     setSaveStatus("error", "지급률 합계가 100%가 아니어서 저장되지 않음");
     return false;
@@ -648,6 +662,7 @@ function replaceByKey(currentRows, importedRows, keyFor) {
 
 async function importIntegrationWorkbook(file, integrationType) {
   if (!file) return;
+  if (!ensureIntegrationPermission(".xlsx Import")) return;
   try {
     const imported = await readIntegrationWorkbook(file, integrationType);
     if (integrationType === "attendance") {
@@ -704,6 +719,7 @@ function detectIdolGroup(attendance, schedules) {
 
 async function importIdolWorkbook(file) {
   if (!file) return;
+  if (!ensureIdolImportPermission()) return;
   const previousState = JSON.parse(JSON.stringify(state));
   try {
     const xmlFiles = await unzipWorkbook(await file.arrayBuffer());
@@ -1800,6 +1816,8 @@ function renderAuditLogs() {
 function applyRoleVisibility() {
   const user = currentUser();
   const foodOnly = isFoodOnlyUser(user);
+  els.groupName.readOnly = foodOnly;
+  els.groupName.title = foodOnly ? `담당 아이돌 ${user.assignedGroupLabel || user.assignedGroup}에 고정됩니다.` : "";
   document.querySelectorAll("[data-settlement-sensitive], [data-settlement-section]").forEach((element) => {
     element.hidden = foodOnly;
   });
@@ -1809,8 +1827,9 @@ function applyRoleVisibility() {
   els.auditPanel.hidden = !user.canViewAudit;
   els.importIdolButton.hidden = !canSwitchIdol(user);
   document.querySelectorAll("[data-integration-import]").forEach((button) => {
-    button.disabled = !isHrMaster(user);
-    button.title = isHrMaster(user) ? ".xlsx 파일을 선택해 데이터를 Import합니다." : "인사 마스터 전용 기능입니다.";
+    button.disabled = false;
+    button.setAttribute("aria-disabled", String(!isHrMaster(user)));
+    button.title = isHrMaster(user) ? ".xlsx 파일을 선택해 데이터를 Import합니다." : "권한 없음, 인사 마스터 전용 기능입니다.";
   });
   const badge = els.integrationPanel?.querySelector(".permission-badge");
   if (badge) badge.textContent = isHrMaster(user) ? "인사 마스터 전용" : "인사 마스터만 실행 가능";
@@ -1873,7 +1892,11 @@ function render() {
 }
 
 function updateSettings() {
-  state.groupName = els.groupName.value.trim() || "그룹";
+  const user = currentUser();
+  state.groupName = isFoodOnlyUser(user) && user.assignedGroup
+    ? user.assignedGroup
+    : els.groupName.value.trim() || "그룹";
+  els.groupName.value = state.groupName;
   state.periodStart = els.periodStart.value;
   state.periodEnd = els.periodEnd.value;
   state.approvalLimit = Number(els.approvalLimit.value || 0);
