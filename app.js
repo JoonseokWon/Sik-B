@@ -725,6 +725,7 @@ function createExpense(date, title, amount, transactionTime = "12:00") {
     approvalMemo: "",
     recommendationNote: "더미 활동/일정 기준으로 생성됨",
     isExceptional: false,
+    exceptionAmount: null,
     exceptionNote: "",
   };
   expense.approvalStatus = defaultApprovalStatus(expense);
@@ -819,10 +820,26 @@ function billableParticipants(expense) {
   return expense.participants.filter((name) => !excluded.has(name));
 }
 
+function effectiveExpenseAmount(expense) {
+  const baseAmount = Math.max(0, Number(expense.amount || 0));
+  if (!expense.isExceptional || expense.exceptionAmount == null || expense.exceptionAmount === "") return baseAmount;
+  return Math.max(0, Number(expense.exceptionAmount || 0));
+}
+
+function setExpenseExceptional(expense, enabled) {
+  expense.isExceptional = enabled;
+  if (enabled) {
+    if (expense.exceptionAmount == null || expense.exceptionAmount === "") expense.exceptionAmount = Math.max(0, Number(expense.amount || 0));
+  } else {
+    expense.exceptionAmount = null;
+    expense.exceptionNote = "";
+  }
+}
+
 function expenseShare(expense) {
   const billable = billableParticipants(expense).length;
   if (billable === 0) return 0;
-  return Math.ceil(Number(expense.amount || 0) / billable);
+  return Math.ceil(effectiveExpenseAmount(expense) / billable);
 }
 
 function expenseHourKey(expense) {
@@ -1248,6 +1265,11 @@ function normalizeState() {
     expense.recommendationNote = String(expense.recommendationNote || "날짜 기준으로 다시 계산할 수 있습니다.")
       .replace("Excel 연동", ".xlsx Import");
     expense.isExceptional = Boolean(expense.isExceptional);
+    expense.exceptionAmount = expense.exceptionAmount == null || expense.exceptionAmount === ""
+      ? null
+      : Math.max(0, Number(expense.exceptionAmount || 0));
+    if (expense.isExceptional && expense.exceptionAmount == null) expense.exceptionAmount = expense.amount;
+    if (!expense.isExceptional) expense.exceptionAmount = null;
     expense.exceptionNote = String(expense.exceptionNote || "");
   });
   refreshAutomaticApprovalStatuses();
@@ -1364,6 +1386,7 @@ function renderExpenses() {
   const canApproveExpense = hasAllPermissions(user);
   state.expenses.forEach((expense) => {
     const share = expenseShare(expense);
+    const appliedAmount = effectiveExpenseAmount(expense);
     const needsApproval = expenseNeedsApproval(expense);
     const status = expenseStatus(expense);
     const approvalReasonText = expenseApprovalReasons(expense).join(", ") || "승인 조건 해당 없음";
@@ -1377,7 +1400,7 @@ function renderExpenses() {
           <strong>${escapeHtml(expense.title)}</strong>
           <span class="compact-sub">예상 ${billableCount}명, ${escapeHtml(expenseStatus(expense))}, ${escapeHtml(approvalReasonText)}, ${escapeHtml(expense.recommendationNote)}</span>
         </div>
-        <div class="compact-money">${currency.format(expense.amount)}</div>
+        <div class="compact-money">${expense.isExceptional ? "특이 " : ""}${currency.format(appliedAmount)}</div>
         <div class="compact-money">1인 ${currency.format(share)}</div>
         <div class="approval-action">
           ${canApproveExpense && needsApproval && status !== "승인 완료" ? `<button class="small approve-button" type="button" data-approve-expense="${expense.id}">승인</button>` : ""}
@@ -1388,7 +1411,7 @@ function renderExpenses() {
         <label>날짜<input type="date" value="${expense.date}" data-expense-field="date" data-id="${expense.id}" aria-label="날짜"></label>
         <label>결제 시간<input type="time" value="${expense.transactionTime}" data-expense-field="transactionTime" data-id="${expense.id}" aria-label="결제 시간"></label>
         <label>내역<input value="${escapeHtml(expense.title)}" data-expense-field="title" data-id="${expense.id}" aria-label="내역"></label>
-        <label>실제 식비<input type="number" min="0" step="100" value="${expense.amount}" data-expense-field="amount" data-id="${expense.id}" aria-label="실제 식비 금액"></label>
+        <label>기본 식비<input type="number" min="0" step="100" value="${expense.amount}" data-expense-field="amount" data-id="${expense.id}" aria-label="기본 식비 금액"></label>
         <label class="wide-field">예상 식사인원
         <div class="input-action-cell">
           <input value="${escapeHtml(expense.participants.join(", "))}" data-expense-field="participants" data-id="${expense.id}" aria-label="예상 식사인원">
@@ -1418,11 +1441,16 @@ function renderExpenses() {
             `).join("") || '<span class="cell-note">정산 대상 멤버가 없습니다.</span>'}
           </div>
         </div>
-        <label class="exception-check">
-          <span>특이 체크</span>
-          <input type="checkbox" ${expense.isExceptional ? "checked" : ""} data-expense-field="isExceptional" data-id="${expense.id}" aria-label="특이 사항 여부">
-          <span>샐러드, 식사 생략 등</span>
-        </label>
+        <div class="exception-controls">
+          <label class="exception-check">
+            <span>특이 체크</span>
+            <input type="checkbox" ${expense.isExceptional ? "checked" : ""} data-expense-field="isExceptional" data-id="${expense.id}" aria-label="특이 사항 여부">
+            <span>샐러드, 식사 생략 등</span>
+          </label>
+          <label>특이 적용 식비
+            <input type="number" min="0" step="100" value="${expense.exceptionAmount ?? expense.amount}" data-expense-field="exceptionAmount" data-id="${expense.id}" aria-label="특이 적용 식비 금액" ${expense.isExceptional ? "required" : "disabled"}>
+          </label>
+        </div>
         <label class="exception-note wide-field">비고(사유)
           <input value="${escapeHtml(expense.exceptionNote)}" data-expense-field="exceptionNote" data-id="${expense.id}" aria-label="특이 사항 사유" placeholder="예: Lia 샐러드 주문, Noa 식사 생략" ${expense.isExceptional ? "required" : "disabled"}>
           ${expense.isExceptional && !expense.exceptionNote.trim() ? '<span class="field-warning">특이 사유를 입력해 주세요.</span>' : ""}
@@ -1744,10 +1772,10 @@ document.addEventListener("change", (event) => {
     if (target.dataset.expenseField === "approvalStatus") {
       if (!ensureApprovalPermission(`${expense.title} 승인 상태 변경`)) return;
     } else if (!ensureEditPermission("비용 건 수정")) return;
-    if (field === "amount") expense.amount = Number(target.value || 0);
+    if (field === "amount") expense.amount = Math.max(0, Number(target.value || 0));
+    else if (field === "exceptionAmount") expense.exceptionAmount = Math.max(0, Number(target.value || 0));
     else if (field === "isExceptional") {
-      expense.isExceptional = target.checked;
-      if (!expense.isExceptional) expense.exceptionNote = "";
+      setExpenseExceptional(expense, target.checked);
     } else if (field === "participants") {
       expense.participants = splitNames(target.value);
       expense.excluded = defaultExcluded(expense.participants);
@@ -1755,17 +1783,18 @@ document.addEventListener("change", (event) => {
       expense.separateMealParticipants = expense.separateMealParticipants.filter((name) => expense.participants.includes(name));
     } else if (field === "excluded") expense.excluded = splitNames(target.value);
     else expense[field] = target.value;
-    if (["amount", "participants", "excluded", "date", "transactionTime"].includes(field) && field !== "approvalStatus") {
+    if (["amount", "exceptionAmount", "isExceptional", "participants", "excluded", "date", "transactionTime"].includes(field) && field !== "approvalStatus") {
       expense.approvalStatus = defaultApprovalStatus(expense);
     }
     if (field === "date") expense.recommendationNote = "날짜가 바뀌었습니다. 불러오기를 누르면 다시 계산됩니다.";
     if (field === "participants") expense.recommendationNote = "직접 수정됨";
     if (["date", "transactionTime", "approvalStatus"].includes(field)) refreshAutomaticApprovalStatuses();
     if (field === "amount") {
-      const reason = expense.isExceptional ? `, 특이 사유: ${expense.exceptionNote || "미입력"}` : "";
-      addAudit("식비 금액 직접 수정", `${expense.date} ${expense.title}: ${currency.format(Number(previous || 0))} -> ${currency.format(expense.amount)}${reason}`);
+      addAudit("기본 식비 수정", `${expense.date} ${expense.title}: ${currency.format(Number(previous || 0))} -> ${currency.format(expense.amount)}`);
+    } else if (field === "exceptionAmount") {
+      addAudit("특이 적용 식비 수정", `${expense.date} ${expense.title}: ${currency.format(Number(previous || 0))} -> ${currency.format(expense.exceptionAmount)}, 특이 사유: ${expense.exceptionNote || "미입력"}`);
     } else if (field === "isExceptional") {
-      addAudit("식비 특이 체크", `${expense.date} ${expense.title}: ${expense.isExceptional ? "특이 사항으로 표시" : "특이 표시 해제 및 비고 삭제"}`);
+      addAudit("식비 특이 체크", `${expense.date} ${expense.title}: ${expense.isExceptional ? `특이 사항으로 표시, 적용 식비 ${currency.format(effectiveExpenseAmount(expense))}` : "특이 표시 해제, 특이 적용 식비와 비고 삭제"}`);
     } else if (field === "exceptionNote") {
       addAudit("식비 특이 사유 수정", `${expense.date} ${expense.title}: ${previous || "미입력"} -> ${expense.exceptionNote || "미입력"}`);
     } else {
@@ -1783,11 +1812,11 @@ document.addEventListener("change", (event) => {
     expense.skippedParticipants = [...skipped];
     if (target.checked) {
       expense.separateMealParticipants = (expense.separateMealParticipants || []).filter((name) => name !== memberName);
-      expense.isExceptional = true;
+      setExpenseExceptional(expense, true);
       if (!expense.exceptionNote.trim() || expense.exceptionNote === `${memberName} 별도 식사`) expense.exceptionNote = `${memberName} 식사 생략`;
     } else if (expense.exceptionNote === `${memberName} 식사 생략`) {
       expense.exceptionNote = "";
-      if (!expense.skippedParticipants.length && !expense.separateMealParticipants.length) expense.isExceptional = false;
+      if (!expense.skippedParticipants.length && !expense.separateMealParticipants.length) setExpenseExceptional(expense, false);
     }
     expense.approvalStatus = defaultApprovalStatus(expense);
     addAudit(
@@ -1806,11 +1835,11 @@ document.addEventListener("change", (event) => {
     expense.separateMealParticipants = [...separate];
     if (target.checked) {
       expense.skippedParticipants = (expense.skippedParticipants || []).filter((name) => name !== memberName);
-      expense.isExceptional = true;
+      setExpenseExceptional(expense, true);
       if (!expense.exceptionNote.trim() || expense.exceptionNote === `${memberName} 식사 생략`) expense.exceptionNote = `${memberName} 별도 식사`;
     } else if (expense.exceptionNote === `${memberName} 별도 식사`) {
       expense.exceptionNote = "";
-      if (!expense.skippedParticipants.length && !expense.separateMealParticipants.length) expense.isExceptional = false;
+      if (!expense.skippedParticipants.length && !expense.separateMealParticipants.length) setExpenseExceptional(expense, false);
     }
     expense.approvalStatus = defaultApprovalStatus(expense);
     addAudit(
@@ -1922,7 +1951,7 @@ document.addEventListener("click", (event) => {
     }
     expense.approvalStatus = "승인 완료";
     expense.approver = user.name;
-    addAudit("식비 승인", `${expense.date} ${expense.title}: ${currency.format(expense.amount)}, 1인 ${currency.format(expenseShare(expense))}`, user);
+    addAudit("식비 승인", `${expense.date} ${expense.title}: ${currency.format(effectiveExpenseAmount(expense))}, 1인 ${currency.format(expenseShare(expense))}`, user);
     render();
     return;
   }

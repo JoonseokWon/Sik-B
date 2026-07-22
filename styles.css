@@ -473,6 +473,13 @@ textarea {
   grid-template-columns: auto auto;
 }
 
+.exception-controls {
+  display: grid;
+  grid-column: span 2;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(180px, 1fr);
+  gap: 10px;
+}
+
 .exception-check input {
   width: 18px;
   min-width: 18px;
@@ -898,7 +905,12 @@ td select {
   }
 
   .expense-edit .wide-field,
-  .meal-skip-field {
+  .meal-skip-field,
+  .exception-controls {
     grid-column: span 1;
+  }
+
+  .exception-controls {
+    grid-template-columns: 1fr;
   }
 }
