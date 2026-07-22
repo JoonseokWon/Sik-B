@@ -679,6 +679,7 @@ async function importIdolWorkbook(file) {
     const paymentRows = worksheetRows(xmlFiles, parser, sharedStrings, "결제내역");
     const expenses = parseExpenseRows(paymentRows, file.name);
     if (!expenses.length) throw new Error("결제내역 시트에서 가져올 식비 결제를 찾을 수 없습니다.");
+    expenses.forEach((expense) => applyExpenseRecommendation(expense));
     state.expenses = expenses;
 
     const dates = [...attendance.map((row) => row.date), ...schedules.map((row) => row.date), ...expenses.map((row) => row.date)].filter(Boolean).sort();
@@ -742,13 +743,19 @@ function activityMembersByDate(date) {
   return [...names].filter((name) => personByName(name));
 }
 
+function recommendedExpenseParticipants(date) {
+  const managers = state.staff
+    .filter((person) => person.settlementExcluded || EXCLUDED_ROLES.has(person.role))
+    .map((person) => person.name);
+  return [...new Set([...activityMembersByDate(date), ...managers])];
+}
+
 function defaultExcluded(participants) {
   return participants.filter((name) => isSettlementExcluded(name));
 }
 
 function createExpense(date, title, amount, transactionTime = "12:00") {
-  const managers = state.staff.filter((person) => person.settlementExcluded || EXCLUDED_ROLES.has(person.role)).map((person) => person.name);
-  const participants = [...new Set([...activityMembersByDate(date), ...managers])];
+  const participants = recommendedExpenseParticipants(date);
   const expense = {
     id: makeId(),
     date,
@@ -1119,16 +1126,21 @@ function nextAttendanceDate() {
 }
 
 function syncExpenseRecommendation(expense) {
-  const participants = [...new Set([...activityMembersByDate(expense.date), ...expense.participants.filter((name) => isSettlementExcluded(name))])];
   const previous = expense.participants.join(", ");
+  applyExpenseRecommendation(expense);
+  const participants = expense.participants;
+  expense.recommendationNote = `활동 기록/일정표 기준 ${participants.length}명 적용`;
+  addAudit("예상 식사인원 적용", `${expense.date} ${expense.title}: ${previous || "없음"} -> ${participants.join(", ") || "예상 없음"}`);
+}
+
+function applyExpenseRecommendation(expense) {
+  const participants = recommendedExpenseParticipants(expense.date);
   expense.participants = participants;
   expense.excluded = defaultExcluded(participants);
   expense.skippedParticipants = (expense.skippedParticipants || []).filter((name) => participants.includes(name));
   expense.separateMealParticipants = (expense.separateMealParticipants || []).filter((name) => participants.includes(name));
   expense.specialMealAmounts = Object.fromEntries(Object.entries(expense.specialMealAmounts || {}).filter(([name]) => participants.includes(name)));
   resetExpenseApprovalStatus(expense);
-  expense.recommendationNote = `활동 기록/일정표 기준 ${participants.length}명 적용`;
-  addAudit("예상 식사인원 적용", `${expense.date} ${expense.title}: ${previous || "없음"} -> ${participants.join(", ") || "예상 없음"}`);
 }
 
 function syncInputs() {
@@ -1370,6 +1382,13 @@ function normalizeState() {
     expense.approvalDecisionMade = Boolean(expense.approvalDecisionMade);
     if (expense.isExceptional && expense.approvalStatus === "보류" && !expense.approvalDecisionMade) {
       expense.approvalStatus = "승인 대기";
+    }
+    const knownPeople = new Set([...state.members, ...state.staff].map((person) => person.name));
+    const hasUnknownParticipant = expense.participants.some((name) => !knownPeople.has(name));
+    const hasCurrentMember = settlementMembers(expense.participants).length > 0;
+    if (hasUnknownParticipant && !hasCurrentMember && activityMembersByDate(expense.date).length) {
+      applyExpenseRecommendation(expense);
+      expense.recommendationNote = "저장 데이터의 이전 그룹 인원을 제거하고 활동 기록/일정표 기준으로 자동 복구함";
     }
   });
   refreshAutomaticApprovalStatuses();
