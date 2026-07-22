@@ -480,6 +480,30 @@ textarea {
   gap: 10px;
 }
 
+.special-meal-field {
+  display: grid;
+  grid-column: span 2;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.special-meal-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 9px;
+  background: #fff;
+}
+
+.special-meal-options label {
+  grid-template-columns: minmax(50px, auto) minmax(90px, 1fr);
+  align-items: center;
+}
+
 .exception-check input {
   width: 18px;
   min-width: 18px;
@@ -906,7 +930,8 @@ td select {
 
   .expense-edit .wide-field,
   .meal-skip-field,
-  .exception-controls {
+  .exception-controls,
+  .special-meal-field {
     grid-column: span 1;
   }
 
