@@ -9,6 +9,7 @@ const ROLES = ["멤버", "매니저", "스태프", "게스트"];
 const EXCLUDED_ROLES = new Set(["매니저", "스태프", "게스트"]);
 const REVENUE_TYPES = ["공통 매출", "개인 매출"];
 const APPROVAL_STATES = ["자동 처리", "승인 대기", "승인 완료", "반려", "보류"];
+const SETTLEMENT_READY_EXPENSE_STATES = new Set(["자동 처리", "승인 완료"]);
 const ACTIVITY_STATES = ["출근", "대기", "외부일정", "제외"];
 const INTERNAL_USERS = [
   { id: "FIN-1024", name: "삼일돌 현장 매니저", role: "현장 매니저", password: "1024", assignedGroup: "Samildol", assignedGroupLabel: "삼일돌", canEdit: true, canApprove: false, canViewAudit: false, canViewMarketingPayroll: false },
@@ -768,6 +769,10 @@ function expenseStatus(expense) {
   return expense.approvalStatus || defaultApprovalStatus(expense);
 }
 
+function isExpenseReadyForSettlement(expense) {
+  return SETTLEMENT_READY_EXPENSE_STATES.has(expenseStatus(expense));
+}
+
 function refreshAutomaticApprovalStatuses() {
   state.expenses.forEach((expense) => {
     if (["자동 처리", "승인 대기"].includes(expense.approvalStatus)) expense.approvalStatus = defaultApprovalStatus(expense);
@@ -878,7 +883,7 @@ function calculateMember(member) {
   }
   const revenue = revenueBreakdown(member);
   const memberExpenses = state.expenses.filter(
-    (expense) => inPeriod(expense.date) && expenseStatus(expense) !== "반려" && billableParticipants(expense).includes(member.name),
+    (expense) => inPeriod(expense.date) && isExpenseReadyForSettlement(expense) && billableParticipants(expense).includes(member.name),
   );
   const food = memberExpenses.reduce((sum, expense) => sum + expenseShare(expense), 0);
   const marketing = marketingCostForMember(member.name);
