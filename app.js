@@ -848,6 +848,14 @@ function billableParticipants(expense) {
   return expense.participants.filter((name) => !excluded.has(name));
 }
 
+function specialMealEligibleParticipants(expense) {
+  const excluded = new Set([
+    ...(expense.excluded || []),
+    ...(expense.skippedParticipants || []),
+  ]);
+  return expense.participants.filter((name) => !excluded.has(name));
+}
+
 function effectiveExpenseAmount(expense) {
   return Math.max(0, Number(expense.amount || 0));
 }
@@ -862,10 +870,16 @@ function setExpenseExceptional(expense, enabled) {
 
 function specialMealAmountEntries(expense) {
   if (!expense.isExceptional) return [];
-  const billable = new Set(billableParticipants(expense));
+  const eligible = new Set(specialMealEligibleParticipants(expense));
   return Object.entries(expense.specialMealAmounts || {})
-    .filter(([name, amount]) => billable.has(name) && amount !== "" && amount != null)
+    .filter(([name, amount]) => eligible.has(name) && amount !== "" && amount != null)
     .map(([name, amount]) => [name, Math.max(0, Number(amount || 0))]);
+}
+
+function settlementParticipants(expense) {
+  const included = new Set(billableParticipants(expense));
+  specialMealAmountEntries(expense).forEach(([name]) => included.add(name));
+  return expense.participants.filter((name) => included.has(name));
 }
 
 function regularBillableParticipants(expense) {
@@ -880,18 +894,18 @@ function expenseShare(expense) {
 }
 
 function expenseShareForMember(expense, memberName) {
-  if (!billableParticipants(expense).includes(memberName)) return 0;
   const specialEntry = specialMealAmountEntries(expense).find(([name]) => name === memberName);
-  return specialEntry ? specialEntry[1] : expenseShare(expense);
+  if (specialEntry) return specialEntry[1];
+  return billableParticipants(expense).includes(memberName) ? expenseShare(expense) : 0;
 }
 
 function maximumExpenseShare(expense) {
-  return billableParticipants(expense).reduce((maximum, name) => Math.max(maximum, expenseShareForMember(expense, name)), 0);
+  return settlementParticipants(expense).reduce((maximum, name) => Math.max(maximum, expenseShareForMember(expense, name)), 0);
 }
 
 function specialMealAllocationError(expense) {
   if (!expense.isExceptional) return "";
-  if (effectiveExpenseAmount(expense) > 0 && billableParticipants(expense).length > 0 && regularBillableParticipants(expense).length === 0) {
+  if (effectiveExpenseAmount(expense) > 0 && settlementParticipants(expense).length > 0 && regularBillableParticipants(expense).length === 0) {
     return "공통 식비를 배분할 일반 인원이 없음";
   }
   return "";
@@ -914,7 +928,7 @@ function concurrentExpenseCount(expense) {
 
 function expenseApprovalReasons(expense) {
   const reasons = [];
-  if (billableParticipants(expense).length === 0) reasons.push("정산 대상 없음");
+  if (settlementParticipants(expense).length === 0) reasons.push("정산 대상 없음");
   const allocationError = specialMealAllocationError(expense);
   if (allocationError) reasons.push(allocationError);
   if (maximumExpenseShare(expense) > Number(state.approvalLimit || 0)) reasons.push(`1인 식비 ${currency.format(maximumExpenseShare(expense))}`);
@@ -928,7 +942,7 @@ function expenseNeedsApproval(expense) {
 }
 
 function defaultApprovalStatus(expense) {
-  if (billableParticipants(expense).length === 0) return "보류";
+  if (settlementParticipants(expense).length === 0) return "보류";
   if (hasInvalidSpecialMealAllocation(expense)) return "보류";
   return expenseNeedsApproval(expense) ? "승인 대기" : "자동 처리";
 }
@@ -1051,7 +1065,7 @@ function calculateMember(member) {
   }
   const revenue = revenueBreakdown(member);
   const memberExpenses = state.expenses.filter(
-    (expense) => inPeriod(expense.date) && isExpenseReadyForSettlement(expense) && billableParticipants(expense).includes(member.name),
+    (expense) => inPeriod(expense.date) && isExpenseReadyForSettlement(expense) && settlementParticipants(expense).includes(member.name),
   );
   const food = memberExpenses.reduce((sum, expense) => sum + expenseShareForMember(expense, member.name), 0);
   const marketing = marketingCostForMember(member.name);
@@ -1455,7 +1469,7 @@ function renderExpenses() {
     const needsApproval = expenseNeedsApproval(expense);
     const status = expenseStatus(expense);
     const approvalReasonText = expenseApprovalReasons(expense).join(", ") || "승인 조건 해당 없음";
-    const billableCount = billableParticipants(expense).length;
+    const billableCount = settlementParticipants(expense).length;
     const specialMealCount = specialMealAmountEntries(expense).length;
     const specialMealError = specialMealAllocationError(expense);
     const card = document.createElement("article");
@@ -1518,7 +1532,7 @@ function renderExpenses() {
         <div class="special-meal-field">
           <span>특이 개별 식비, 금액 입력 멤버는 해당 금액만 배부</span>
           <div class="special-meal-options">
-            ${billableParticipants(expense).map((name) => {
+            ${specialMealEligibleParticipants(expense).map((name) => {
               const hasAmount = Object.prototype.hasOwnProperty.call(expense.specialMealAmounts || {}, name);
               return `
                 <label>
@@ -1916,7 +1930,7 @@ document.addEventListener("change", (event) => {
       if (!expense.exceptionNote.trim() || expense.exceptionNote === `${memberName} 별도 식사`) expense.exceptionNote = `${memberName} 식사 생략`;
     } else if (expense.exceptionNote === `${memberName} 식사 생략`) {
       expense.exceptionNote = "";
-      if (!expense.skippedParticipants.length && !expense.separateMealParticipants.length) setExpenseExceptional(expense, false);
+      if (!expense.skippedParticipants.length && !expense.separateMealParticipants.length && !specialMealAmountEntries(expense).length) setExpenseExceptional(expense, false);
     }
     expense.approvalStatus = defaultApprovalStatus(expense);
     addAudit(
@@ -1935,17 +1949,16 @@ document.addEventListener("change", (event) => {
     expense.separateMealParticipants = [...separate];
     if (target.checked) {
       expense.skippedParticipants = (expense.skippedParticipants || []).filter((name) => name !== memberName);
-      delete expense.specialMealAmounts?.[memberName];
       setExpenseExceptional(expense, true);
       if (!expense.exceptionNote.trim() || expense.exceptionNote === `${memberName} 식사 생략`) expense.exceptionNote = `${memberName} 별도 식사`;
     } else if (expense.exceptionNote === `${memberName} 별도 식사`) {
       expense.exceptionNote = "";
-      if (!expense.skippedParticipants.length && !expense.separateMealParticipants.length) setExpenseExceptional(expense, false);
+      if (!expense.skippedParticipants.length && !expense.separateMealParticipants.length && !specialMealAmountEntries(expense).length) setExpenseExceptional(expense, false);
     }
     expense.approvalStatus = defaultApprovalStatus(expense);
     addAudit(
       "별도 식사 인원 수정",
-      `${expense.date} ${expense.title}: ${memberName} ${target.checked ? "별도 식사로 배분 제외" : "별도 식사 해제"}, 정산 대상 ${billableParticipants(expense).length}명, 1인 ${currency.format(expenseShare(expense))}`,
+      `${expense.date} ${expense.title}: ${memberName} ${target.checked ? "공통 식비 배분 제외, 특이 개별 식비 입력 가능" : "별도 식사 해제"}, 정산 대상 ${settlementParticipants(expense).length}명, 일반 1인 ${currency.format(expenseShare(expense))}`,
     );
     render();
   }
