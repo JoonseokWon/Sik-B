@@ -577,11 +577,50 @@ function parseExpenseRows(rows, sourceFileName) {
   }).filter((expense) => expense.date && expense.title && expense.amount >= 0);
 }
 
+class IntegrationTargetMismatchError extends Error {
+  constructor(importedGroup) {
+    const importedLabel = importedGroup === "Samildol" ? "삼일돌" : importedGroup;
+    const currentLabel = state.groupName === "Samildol" ? "삼일돌" : state.groupName;
+    super(`${importedLabel} 데이터는 현재 ${currentLabel}의 연동 대상이 아닙니다.`);
+    this.name = "IntegrationTargetMismatchError";
+    this.importedGroup = importedGroup;
+  }
+}
+
+function groupFromFileName(fileName) {
+  const normalized = String(fileName || "").toLowerCase();
+  if (normalized.includes("samdeheon") || normalized.includes("삼데헌")) return "삼데헌";
+  if (normalized.includes("samildol") || normalized.includes("삼일돌")) return "Samildol";
+  return "";
+}
+
+function workbookTargetGroup(xmlFiles, parser, sharedStrings, fileName) {
+  const activity = parseActivityRows(worksheetRows(xmlFiles, parser, sharedStrings, "활동기록"), "", "출근");
+  const schedules = parseScheduleRows(worksheetRows(xmlFiles, parser, sharedStrings, "일정표"));
+  if (activity.length || schedules.length) {
+    try {
+      return detectIdolGroup(activity, schedules).name;
+    } catch (error) {
+      if (!/식별할 수 없습니다/.test(error.message || "")) throw error;
+    }
+  }
+  const samdeheonMeals = worksheetRows(xmlFiles, parser, sharedStrings, "삼데헌 식사");
+  const samildolMeals = worksheetRows(xmlFiles, parser, sharedStrings, "Samildol 식사");
+  if (samdeheonMeals.length && !samildolMeals.length) return "삼데헌";
+  if (samildolMeals.length && !samdeheonMeals.length) return "Samildol";
+  return groupFromFileName(fileName);
+}
+
+function assertCurrentIntegrationTarget(importedGroup) {
+  if (importedGroup && importedGroup !== state.groupName) throw new IntegrationTargetMismatchError(importedGroup);
+}
+
 async function readIntegrationWorkbook(file, integrationType) {
   const xmlFiles = await unzipWorkbook(await file.arrayBuffer());
   const parser = new DOMParser();
   const sharedDoc = parser.parseFromString(xmlFiles.get("xl/sharedStrings.xml") || "<sst/>", "application/xml");
   const sharedStrings = [...sharedDoc.querySelectorAll("si")].map((node) => [...node.querySelectorAll("t")].map((text) => text.textContent).join(""));
+  assertCurrentIntegrationTarget(workbookTargetGroup(xmlFiles, parser, sharedStrings, file.name));
   if (integrationType === "attendance") {
     const attendance = parseActivityRows(worksheetRows(xmlFiles, parser, sharedStrings, "활동기록"), "회사 입출 기록", "출근");
     if (!attendance.length) throw new Error("활동기록 시트에서 회사 입출 기록을 찾을 수 없습니다.");
@@ -630,6 +669,13 @@ async function importIntegrationWorkbook(file, integrationType) {
     }
     render();
   } catch (error) {
+    if (error instanceof IntegrationTargetMismatchError) {
+      const importedLabel = error.importedGroup === "Samildol" ? "삼일돌" : error.importedGroup;
+      state.integrationStatus[integrationType] = `대상 아님, ${importedLabel} 데이터`;
+      addAudit(".xlsx Import 대상 아님", `${file.name}: ${error.message} 일정과 식비를 포함한 원본 데이터는 저장하지 않았습니다.`);
+      render();
+      return;
+    }
     addAudit(".xlsx Import 실패", `${file.name}: ${error.message || "알 수 없는 오류"}`);
     alert(`.xlsx Import에 실패했습니다.\n${error.message || "파일 형식을 확인해 주세요."}`);
     render();
@@ -1751,6 +1797,9 @@ function renderIntegrationStatus() {
   els.attendanceIntegrationStatus.textContent = state.integrationStatus.attendance;
   els.scheduleIntegrationStatus.textContent = state.integrationStatus.schedule;
   els.expenseIntegrationStatus.textContent = state.integrationStatus.expense;
+  [els.attendanceIntegrationStatus, els.scheduleIntegrationStatus, els.expenseIntegrationStatus].forEach((element) => {
+    element.dataset.status = element.textContent.includes("대상 아님") ? "not-target" : "ready";
+  });
 }
 
 function renderTotals() {
