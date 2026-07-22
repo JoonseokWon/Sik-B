@@ -4,7 +4,7 @@ const currency = new Intl.NumberFormat("ko-KR", {
   maximumFractionDigits: 0,
 });
 
-const DATA_VERSION = 16;
+const DATA_VERSION = 17;
 const ROLES = ["멤버", "매니저", "스태프", "게스트"];
 const EXCLUDED_ROLES = new Set(["매니저", "스태프", "게스트"]);
 const REVENUE_TYPES = ["공통 매출", "개인 매출"];
@@ -1302,6 +1302,9 @@ function seedData() {
     createExpense("2026-07-10", "콘서트 리허설 저녁", 150000, "18:20"),
     createExpense("2026-07-13", "월간회의 점심", 138000, "13:00"),
     createExpense("2026-07-14", "퍼포먼스 점검 점심", 104000, "12:25"),
+    createExpense("2026-07-15", "마감 리허설 점심", 125000, "12:05"),
+    createExpense("2026-07-15", "마감 리허설 추가 음료", 25000, "12:30"),
+    createExpense("2026-07-15", "마감 리허설 간식 결제", 35000, "12:50"),
     createExpense("2026-07-15", "마감 리허설 저녁", 175000, "18:20"),
   ];
   state.marketingPayroll = defaultMarketingPayroll();
