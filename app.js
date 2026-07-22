@@ -9,6 +9,7 @@ const ROLES = ["멤버", "매니저", "스태프", "게스트"];
 const EXCLUDED_ROLES = new Set(["매니저", "스태프", "게스트"]);
 const REVENUE_TYPES = ["공통 매출", "개인 매출"];
 const APPROVAL_STATES = ["자동 처리", "승인 대기", "승인 완료", "반려", "보류"];
+const APPROVAL_DECISION_STATES = ["승인 완료", "반려", "보류"];
 const SETTLEMENT_READY_EXPENSE_STATES = new Set(["자동 처리", "승인 완료"]);
 const ACTIVITY_STATES = ["출근", "대기", "외부일정", "제외"];
 const SERVER_SAVE_DELAY = 250;
@@ -127,6 +128,15 @@ function formatMoneyInputElement(input) {
     nextCursor += 1;
   }
   input.setSelectionRange(nextCursor, nextCursor);
+}
+
+function approvalDecisionOptions(status) {
+  const currentOption = APPROVAL_DECISION_STATES.includes(status)
+    ? ""
+    : `<option value="" selected disabled>${escapeHtml(status === "자동 처리" ? "자동 처리" : "승인 대기")}</option>`;
+  return currentOption + APPROVAL_DECISION_STATES
+    .map((item) => `<option value="${item}" ${status === item ? "selected" : ""}>${item}</option>`)
+    .join("");
 }
 
 function formatTime(date = new Date()) {
@@ -943,7 +953,7 @@ function expenseNeedsApproval(expense) {
 
 function defaultApprovalStatus(expense) {
   if (settlementParticipants(expense).length === 0) return "보류";
-  if (hasInvalidSpecialMealAllocation(expense)) return "보류";
+  if (hasInvalidSpecialMealAllocation(expense)) return "승인 대기";
   return expenseNeedsApproval(expense) ? "승인 대기" : "자동 처리";
 }
 
@@ -1484,8 +1494,8 @@ function renderExpenses() {
         <div class="compact-money">${expense.isExceptional ? "공통 " : ""}${currency.format(commonAmount)}</div>
         <div class="compact-money">${specialMealCount ? `일반 1인 ${currency.format(share)}` : `1인 ${currency.format(share)}`}</div>
         <div class="approval-action">
-          ${canApproveExpense ? `<select class="quick-approval-select" data-expense-field="approvalStatus" data-id="${expense.id}" aria-label="${escapeHtml(expense.title)} 빠른 승인 상태 변경" title="승인, 반려, 보류 등 상태 변경">
-            ${APPROVAL_STATES.map((item) => `<option value="${item}" ${status === item ? "selected" : ""}>${item}</option>`).join("")}
+          ${canApproveExpense && status !== "자동 처리" ? `<select class="quick-approval-select" data-expense-field="approvalStatus" data-id="${expense.id}" aria-label="${escapeHtml(expense.title)} 빠른 승인 상태 변경" title="승인 완료, 반려, 보류 중 선택">
+            ${approvalDecisionOptions(status)}
           </select>` : ""}
         </div>
         <button class="remove" type="button" data-remove-expense="${expense.id}" aria-label="비용 삭제">x</button>
@@ -1551,7 +1561,7 @@ function renderExpenses() {
           ${expense.isExceptional && !expense.exceptionNote.trim() ? '<span class="field-warning">특이 사유를 입력해 주세요.</span>' : ""}
         </label>
         <label>승인 상태<select data-expense-field="approvalStatus" data-id="${expense.id}" aria-label="승인 상태" ${canApproveExpense ? "" : "disabled"}>
-          ${APPROVAL_STATES.map((item) => `<option value="${item}" ${status === item ? "selected" : ""}>${item}</option>`).join("")}
+          ${approvalDecisionOptions(status)}
         </select></label>
         <label>승인권자<input value="${escapeHtml(expense.approver)}" data-expense-field="approver" data-id="${expense.id}" aria-label="승인권자" disabled></label>
       </div>
@@ -1866,10 +1876,7 @@ document.addEventListener("change", (event) => {
     const field = target.dataset.expenseField;
     if (target.dataset.expenseField === "approvalStatus") {
       if (!ensureApprovalPermission(`${expense.title} 승인 상태 변경`)) return;
-      if (target.value === "승인 완료" && hasInvalidSpecialMealAllocation(expense)) {
-        const allocationError = specialMealAllocationError(expense);
-        addAudit("승인 차단", `${expense.title}: ${allocationError}`);
-        alert(`${allocationError}. 금액을 확인해 주세요.`);
+      if (!APPROVAL_DECISION_STATES.includes(target.value)) {
         render();
         return;
       }
@@ -1882,8 +1889,6 @@ document.addEventListener("change", (event) => {
         "승인 완료": "식비 승인",
         "반려": "식비 반려",
         "보류": "식비 보류",
-        "승인 대기": "승인 대기 지정",
-        "자동 처리": "자동 처리 지정",
       }[nextStatus] || "승인 상태 변경";
       addAudit(
         auditAction,
