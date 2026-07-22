@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Food-Fee 정산 툴</title>
-    <link rel="stylesheet" href="styles.css?v=20260715-approval-center">
+    <link rel="stylesheet" href="styles.css?v=20260722-shared-save">
   </head>
   <body>
     <div id="loginOverlay" class="login-overlay" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
@@ -80,6 +80,7 @@
           </label>
           <button id="logoutButton" type="button" class="ghost">로그아웃</button>
           <div id="authNotice" class="note auth-note"></div>
+          <div id="saveStatus" class="save-status" role="status" aria-live="polite">저장 상태 확인 중</div>
           <label>
             그룹명
             <input id="groupName" type="text" value="Samildol">
@@ -234,6 +235,6 @@
       </section>
     </main>
 
-    <script src="app.js?v=20260722-approval-allocation"></script>
+    <script src="app.js?v=20260722-shared-save"></script>
   </body>
 </html>

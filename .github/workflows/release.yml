@@ -71,7 +71,7 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path $artifacts, $webRoot, $windowsRoot | Out-Null
 
-          $webFiles = @("index.html", "styles.css", "app.js", "README.md")
+          $webFiles = @("index.html", "styles.css", "app.js", "server.py", "_start.bat", "start_server.sh", "README.md")
           Copy-Item -LiteralPath $webFiles -Destination $webRoot
           Copy-Item -LiteralPath "sample-data" -Destination $webRoot -Recurse
 
@@ -98,6 +98,7 @@ jobs:
           - 역할별 식비 정산, 승인, 감사 로그
           - 삼일돌, 삼데헌 더미데이터
           - .xlsx 기반 아이돌 데이터 Import
+          - 그룹 공용 JSON 저장과 로컬 네트워크 다중 기기 테스트
           - 월 144시간 기준 마케팅 급여의 아이돌 투입시간, 비아이돌 업무시간 분리 배부
           - 실제 권한, 데이터 출처, 브라우저 저장 한계를 반영한 README
           - web.zip: Windows, macOS, Linux 브라우저 실행용

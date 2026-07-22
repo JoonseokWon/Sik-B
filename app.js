@@ -11,6 +11,9 @@ const REVENUE_TYPES = ["공통 매출", "개인 매출"];
 const APPROVAL_STATES = ["자동 처리", "승인 대기", "승인 완료", "반려", "보류"];
 const SETTLEMENT_READY_EXPENSE_STATES = new Set(["자동 처리", "승인 완료"]);
 const ACTIVITY_STATES = ["출근", "대기", "외부일정", "제외"];
+const SERVER_SAVE_DELAY = 250;
+let serverSaveTimer = 0;
+let persistenceReady = false;
 const INTERNAL_USERS = [
   { id: "FIN-1024", name: "삼일돌 현장 매니저", role: "현장 매니저", password: "1024", assignedGroup: "Samildol", assignedGroupLabel: "삼일돌", canEdit: true, canApprove: false, canViewAudit: false, canViewMarketingPayroll: false },
   { id: "FIN-1025", name: "삼데헌 현장 매니저", role: "현장 매니저", password: "1025", assignedGroup: "삼데헌", assignedGroupLabel: "삼데헌", canEdit: true, canApprove: false, canViewAudit: false, canViewMarketingPayroll: false },
@@ -52,6 +55,7 @@ const els = {
   currentUser: document.querySelector("#currentUser"),
   logoutButton: document.querySelector("#logoutButton"),
   authNotice: document.querySelector("#authNotice"),
+  saveStatus: document.querySelector("#saveStatus"),
   periodStart: document.querySelector("#periodStart"),
   periodEnd: document.querySelector("#periodEnd"),
   approvalLimit: document.querySelector("#approvalLimit"),
@@ -216,29 +220,98 @@ function canViewMarketingPayroll(user = currentUser()) {
   return user.canViewMarketingPayroll === true;
 }
 
-function assignedStateKey(user) {
+function legacyAssignedStateKey(user) {
   return user?.assignedGroup ? `foodFeeState:${user.id}` : "";
 }
 
+function groupStateKey(groupName = state.groupName) {
+  return groupName ? `foodFeeState:group:${groupName}` : "";
+}
+
+function serverStateUrl(groupName = state.groupName) {
+  if (typeof window === "undefined" || !["http:", "https:"].includes(window.location.protocol) || !groupName) return "";
+  return `/api/state/${encodeURIComponent(groupName)}`;
+}
+
+function setSaveStatus(status, message) {
+  if (!els.saveStatus) return;
+  els.saveStatus.dataset.status = status;
+  els.saveStatus.textContent = message;
+}
+
+function queueServerSave(serialized, groupName) {
+  const url = serverStateUrl(groupName);
+  if (!url || !isAuthenticated() || !persistenceReady) {
+    setSaveStatus("saved", "이 브라우저에 저장됨");
+    return;
+  }
+  clearTimeout(serverSaveTimer);
+  setSaveStatus("saving", "공용 저장소에 저장 중");
+  serverSaveTimer = setTimeout(async () => {
+    try {
+      const response = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: serialized,
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setSaveStatus("saved", `공용 저장소에 저장됨, ${groupName}`);
+    } catch (error) {
+      console.warn("공용 저장소에 저장하지 못했습니다.", error);
+      setSaveStatus("error", "서버 저장 실패, 이 브라우저에만 저장됨");
+    }
+  }, SERVER_SAVE_DELAY);
+}
+
 function persistState() {
-  if (!hasValidContractRateTotal()) return false;
+  if (!hasValidContractRateTotal()) {
+    setSaveStatus("error", "지급률 합계가 100%가 아니어서 저장되지 않음");
+    return false;
+  }
   const serialized = JSON.stringify(state);
-  localStorage.setItem("foodFeeState", serialized);
-  const key = assignedStateKey(authenticatedUser());
-  if (key) localStorage.setItem(key, serialized);
+  try {
+    localStorage.setItem("foodFeeState", serialized);
+    const key = groupStateKey();
+    if (key) localStorage.setItem(key, serialized);
+  } catch (error) {
+    console.error("브라우저 저장소에 저장하지 못했습니다.", error);
+    setSaveStatus("error", "브라우저 저장 실패, 저장 공간과 보안 설정 확인 필요");
+    return false;
+  }
+  queueServerSave(serialized, state.groupName);
   return true;
 }
 
-function loadAssignedIdol(user) {
-  if (!user?.assignedGroup) return false;
-  const saved = localStorage.getItem(assignedStateKey(user));
-  if (saved) {
+async function loadServerState(groupName) {
+  const url = serverStateUrl(groupName);
+  if (!url) return null;
+  try {
+    const response = await fetch(url, { headers: { Accept: "application/json" } });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  } catch (error) {
+    console.warn("공용 저장소에서 데이터를 불러오지 못했습니다.", error);
+    setSaveStatus("error", "서버 연결 실패, 브라우저 저장값 사용 중");
+    return null;
+  }
+}
+
+async function loadGroupState(groupName, user) {
+  if (!groupName) return false;
+  const serverState = await loadServerState(groupName);
+  const groupSaved = localStorage.getItem(groupStateKey(groupName));
+  const legacySaved = user?.assignedGroup === groupName ? localStorage.getItem(legacyAssignedStateKey(user)) : null;
+  const candidates = [serverState, groupSaved, legacySaved];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
     try {
-      const parsed = JSON.parse(saved);
-      if (parsed.version === DATA_VERSION && parsed.groupName === user.assignedGroup) {
+      const parsed = typeof candidate === "string" ? JSON.parse(candidate) : candidate;
+      if (parsed.version === DATA_VERSION && parsed.groupName === groupName) {
         Object.assign(state, parsed);
         state.currentUserId = user.id;
         normalizeState();
+        persistState();
         return true;
       }
     } catch (error) {
@@ -246,10 +319,26 @@ function loadAssignedIdol(user) {
     }
   }
 
+  return false;
+}
+
+async function loadAssignedIdol(user) {
+  if (!user) return false;
+  const targetGroup = user.assignedGroup || state.groupName;
+  if (await loadGroupState(targetGroup, user)) return true;
+  if (!user.assignedGroup) return false;
+
   state.currentUserId = user.id;
   if (user.assignedGroup === "삼데헌") seedOtherIdolData();
   else seedData();
   return false;
+}
+
+function clearPersistedGroup(groupName) {
+  localStorage.removeItem("foodFeeState");
+  localStorage.removeItem(groupStateKey(groupName));
+  const url = serverStateUrl(groupName);
+  if (url) fetch(url, { method: "DELETE" }).catch((error) => console.warn("공용 저장값을 삭제하지 못했습니다.", error));
 }
 
 function ensureGeneralEditPermission(action) {
@@ -1564,7 +1653,7 @@ function updateSettings() {
   render();
 }
 
-document.addEventListener("submit", (event) => {
+document.addEventListener("submit", async (event) => {
   if (event.target !== els.loginForm) return;
   event.preventDefault();
 
@@ -1578,7 +1667,8 @@ document.addEventListener("submit", (event) => {
 
   state.currentUserId = user.id;
   sessionStorage.setItem("foodFeeAuthUser", user.id);
-  loadAssignedIdol(user);
+  await loadAssignedIdol(user);
+  persistenceReady = true;
   const assignmentNote = user.assignedGroup ? ` 담당 아이돌 ${user.assignedGroupLabel || user.assignedGroup} 데이터를 자동 연동했습니다.` : "";
   addAudit("로그인", `${actorLabel(user)} 계정으로 로그인했습니다.${assignmentNote}`, user);
   hideLogin();
@@ -1803,6 +1893,7 @@ document.addEventListener("click", (event) => {
     if (user) addAudit("로그아웃", `${actorLabel(user)} 계정에서 로그아웃했습니다.`, user);
     persistState();
     sessionStorage.removeItem("foodFeeAuthUser");
+    persistenceReady = false;
     showLogin();
     return;
   }
@@ -1837,8 +1928,10 @@ document.addEventListener("click", (event) => {
   }
   if (target.id === "resetButton") {
     if (!ensureGeneralEditPermission("전체 데이터 초기화")) return;
-    localStorage.removeItem("foodFeeState");
-    seedData();
+    const groupName = state.groupName;
+    clearPersistedGroup(groupName);
+    if (groupName === "삼데헌") seedOtherIdolData();
+    else seedData();
   }
   if (target.id === "addMemberButton") {
     if (!ensureGeneralEditPermission("내부 멤버 동기화")) return;
@@ -1938,26 +2031,30 @@ document.addEventListener("click", (event) => {
   }
 });
 
-function boot() {
+async function boot() {
   const saved = localStorage.getItem("foodFeeState");
+  let restored = false;
   if (saved) {
-    const parsed = JSON.parse(saved);
-    if (parsed.version !== DATA_VERSION) {
-      seedData();
-    } else {
-      Object.assign(state, parsed);
-      normalizeState();
-      syncInputs();
-      render();
+    try {
+      const parsed = JSON.parse(saved);
+      if (parsed.version === DATA_VERSION) {
+        Object.assign(state, parsed);
+        normalizeState();
+        syncInputs();
+        render();
+        restored = true;
+      }
+    } catch (error) {
+      console.warn("브라우저 저장 데이터를 복원하지 못했습니다.", error);
     }
-  } else {
-    seedData();
   }
+  if (!restored) seedData();
 
   const user = authenticatedUser();
   if (user) {
     state.currentUserId = user.id;
-    loadAssignedIdol(user);
+    await loadAssignedIdol(user);
+    persistenceReady = true;
     hideLogin();
     syncInputs();
     render();
