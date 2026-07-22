@@ -749,7 +749,6 @@ function createExpense(date, title, amount, transactionTime = "12:00") {
     approvalMemo: "",
     recommendationNote: "더미 활동/일정 기준으로 생성됨",
     isExceptional: false,
-    exceptionAmount: null,
     specialMealAmounts: {},
     exceptionNote: "",
   };
@@ -846,17 +845,12 @@ function billableParticipants(expense) {
 }
 
 function effectiveExpenseAmount(expense) {
-  const baseAmount = Math.max(0, Number(expense.amount || 0));
-  if (!expense.isExceptional || expense.exceptionAmount == null || expense.exceptionAmount === "") return baseAmount;
-  return Math.max(0, Number(expense.exceptionAmount || 0));
+  return Math.max(0, Number(expense.amount || 0));
 }
 
 function setExpenseExceptional(expense, enabled) {
   expense.isExceptional = enabled;
-  if (enabled) {
-    if (expense.exceptionAmount == null || expense.exceptionAmount === "") expense.exceptionAmount = Math.max(0, Number(expense.amount || 0));
-  } else {
-    expense.exceptionAmount = null;
+  if (!enabled) {
     expense.specialMealAmounts = {};
     expense.exceptionNote = "";
   }
@@ -870,10 +864,6 @@ function specialMealAmountEntries(expense) {
     .map(([name, amount]) => [name, Math.max(0, Number(amount || 0))]);
 }
 
-function specialMealAmountTotal(expense) {
-  return specialMealAmountEntries(expense).reduce((sum, [, amount]) => sum + amount, 0);
-}
-
 function regularBillableParticipants(expense) {
   const specialNames = new Set(specialMealAmountEntries(expense).map(([name]) => name));
   return billableParticipants(expense).filter((name) => !specialNames.has(name));
@@ -882,8 +872,7 @@ function regularBillableParticipants(expense) {
 function expenseShare(expense) {
   const regularCount = regularBillableParticipants(expense).length;
   if (regularCount === 0) return 0;
-  const remainingAmount = Math.max(0, effectiveExpenseAmount(expense) - specialMealAmountTotal(expense));
-  return Math.ceil(remainingAmount / regularCount);
+  return Math.ceil(effectiveExpenseAmount(expense) / regularCount);
 }
 
 function expenseShareForMember(expense, memberName) {
@@ -898,16 +887,13 @@ function maximumExpenseShare(expense) {
 
 function specialMealAllocationError(expense) {
   if (!expense.isExceptional) return "";
-  const specialTotal = specialMealAmountTotal(expense);
-  const appliedAmount = effectiveExpenseAmount(expense);
-  if (specialTotal > appliedAmount) return "특이 개별 식비 합계가 전체 식비를 초과함";
-  if (billableParticipants(expense).length > 0 && regularBillableParticipants(expense).length === 0 && specialTotal < appliedAmount) {
-    return "남은 식비를 배분할 일반 인원이 없음";
+  if (effectiveExpenseAmount(expense) > 0 && billableParticipants(expense).length > 0 && regularBillableParticipants(expense).length === 0) {
+    return "공통 식비를 배분할 일반 인원이 없음";
   }
   return "";
 }
 
-function hasInvalidSpecialMealTotal(expense) {
+function hasInvalidSpecialMealAllocation(expense) {
   return Boolean(specialMealAllocationError(expense));
 }
 
@@ -939,7 +925,7 @@ function expenseNeedsApproval(expense) {
 
 function defaultApprovalStatus(expense) {
   if (billableParticipants(expense).length === 0) return "보류";
-  if (hasInvalidSpecialMealTotal(expense)) return "보류";
+  if (hasInvalidSpecialMealAllocation(expense)) return "보류";
   return expenseNeedsApproval(expense) ? "승인 대기" : "자동 처리";
 }
 
@@ -1338,11 +1324,7 @@ function normalizeState() {
     expense.recommendationNote = String(expense.recommendationNote || "날짜 기준으로 다시 계산할 수 있습니다.")
       .replace("Excel 연동", ".xlsx Import");
     expense.isExceptional = Boolean(expense.isExceptional);
-    expense.exceptionAmount = expense.exceptionAmount == null || expense.exceptionAmount === ""
-      ? null
-      : Math.max(0, Number(expense.exceptionAmount || 0));
-    if (expense.isExceptional && expense.exceptionAmount == null) expense.exceptionAmount = expense.amount;
-    if (!expense.isExceptional) expense.exceptionAmount = null;
+    delete expense.exceptionAmount;
     expense.specialMealAmounts = expense.specialMealAmounts && typeof expense.specialMealAmounts === "object"
       ? Object.fromEntries(Object.entries(expense.specialMealAmounts)
         .filter(([name, amount]) => expense.participants.includes(name) && amount !== "" && amount != null)
@@ -1465,7 +1447,7 @@ function renderExpenses() {
   const canApproveExpense = hasAllPermissions(user);
   state.expenses.forEach((expense) => {
     const share = expenseShare(expense);
-    const appliedAmount = effectiveExpenseAmount(expense);
+    const commonAmount = effectiveExpenseAmount(expense);
     const needsApproval = expenseNeedsApproval(expense);
     const status = expenseStatus(expense);
     const approvalReasonText = expenseApprovalReasons(expense).join(", ") || "승인 조건 해당 없음";
@@ -1481,7 +1463,7 @@ function renderExpenses() {
           <strong>${escapeHtml(expense.title)}</strong>
           <span class="compact-sub">예상 ${billableCount}명, ${escapeHtml(expenseStatus(expense))}, ${escapeHtml(approvalReasonText)}, ${escapeHtml(expense.recommendationNote)}</span>
         </div>
-        <div class="compact-money">${expense.isExceptional ? "특이 " : ""}${currency.format(appliedAmount)}</div>
+        <div class="compact-money">${expense.isExceptional ? "공통 " : ""}${currency.format(commonAmount)}</div>
         <div class="compact-money">${specialMealCount ? `일반 1인 ${currency.format(share)}` : `1인 ${currency.format(share)}`}</div>
         <div class="approval-action">
           ${canApproveExpense && needsApproval && status !== "승인 완료" ? `<button class="small approve-button" type="button" data-approve-expense="${expense.id}">승인</button>` : ""}
@@ -1527,9 +1509,6 @@ function renderExpenses() {
             <span>특이 체크</span>
             <input type="checkbox" ${expense.isExceptional ? "checked" : ""} data-expense-field="isExceptional" data-id="${expense.id}" aria-label="특이 사항 여부">
             <span>샐러드, 식사 생략 등</span>
-          </label>
-          <label>특이 적용 총 식비
-            <input type="text" inputmode="numeric" value="${formatMoneyInput(expense.exceptionAmount ?? expense.amount)}" data-money-input data-expense-field="exceptionAmount" data-id="${expense.id}" aria-label="특이 적용 총 식비 금액" ${expense.isExceptional ? "required" : "disabled"}>
           </label>
         </div>
         <div class="special-meal-field">
@@ -1867,7 +1846,7 @@ document.addEventListener("change", (event) => {
     const field = target.dataset.expenseField;
     if (target.dataset.expenseField === "approvalStatus") {
       if (!ensureApprovalPermission(`${expense.title} 승인 상태 변경`)) return;
-      if (target.value === "승인 완료" && hasInvalidSpecialMealTotal(expense)) {
+      if (target.value === "승인 완료" && hasInvalidSpecialMealAllocation(expense)) {
         const allocationError = specialMealAllocationError(expense);
         addAudit("승인 차단", `${expense.title}: ${allocationError}`);
         alert(`${allocationError}. 금액을 확인해 주세요.`);
@@ -1876,7 +1855,6 @@ document.addEventListener("change", (event) => {
       }
     } else if (!ensureEditPermission("비용 건 수정")) return;
     if (field === "amount") expense.amount = parseMoneyInput(target.value);
-    else if (field === "exceptionAmount") expense.exceptionAmount = parseMoneyInput(target.value);
     else if (field === "isExceptional") {
       setExpenseExceptional(expense, target.checked);
     } else if (field === "participants") {
@@ -1887,7 +1865,7 @@ document.addEventListener("change", (event) => {
       expense.specialMealAmounts = Object.fromEntries(Object.entries(expense.specialMealAmounts || {}).filter(([name]) => expense.participants.includes(name)));
     } else if (field === "excluded") expense.excluded = splitNames(target.value);
     else expense[field] = target.value;
-    if (["amount", "exceptionAmount", "isExceptional", "participants", "excluded", "date", "transactionTime"].includes(field) && field !== "approvalStatus") {
+    if (["amount", "isExceptional", "participants", "excluded", "date", "transactionTime"].includes(field) && field !== "approvalStatus") {
       expense.approvalStatus = defaultApprovalStatus(expense);
     }
     if (field === "date") expense.recommendationNote = "날짜가 바뀌었습니다. 불러오기를 누르면 다시 계산됩니다.";
@@ -1895,10 +1873,8 @@ document.addEventListener("change", (event) => {
     if (["date", "transactionTime", "approvalStatus"].includes(field)) refreshAutomaticApprovalStatuses();
     if (field === "amount") {
       addAudit("기본 식비 수정", `${expense.date} ${expense.title}: ${currency.format(Number(previous || 0))} -> ${currency.format(expense.amount)}`);
-    } else if (field === "exceptionAmount") {
-      addAudit("특이 적용 식비 수정", `${expense.date} ${expense.title}: ${currency.format(Number(previous || 0))} -> ${currency.format(expense.exceptionAmount)}, 특이 사유: ${expense.exceptionNote || "미입력"}`);
     } else if (field === "isExceptional") {
-      addAudit("식비 특이 체크", `${expense.date} ${expense.title}: ${expense.isExceptional ? `특이 사항으로 표시, 적용 식비 ${currency.format(effectiveExpenseAmount(expense))}` : "특이 표시 해제, 특이 적용 식비와 비고 삭제"}`);
+      addAudit("식비 특이 체크", `${expense.date} ${expense.title}: ${expense.isExceptional ? `특이 사항으로 표시, 공통 식비 ${currency.format(effectiveExpenseAmount(expense))} 유지` : "특이 표시 해제, 특이 개별 식비와 비고 삭제"}`);
     } else if (field === "exceptionNote") {
       addAudit("식비 특이 사유 수정", `${expense.date} ${expense.title}: ${previous || "미입력"} -> ${expense.exceptionNote || "미입력"}`);
     } else {
@@ -2070,7 +2046,7 @@ document.addEventListener("click", (event) => {
       render();
       return;
     }
-    if (hasInvalidSpecialMealTotal(expense)) {
+    if (hasInvalidSpecialMealAllocation(expense)) {
       const allocationError = specialMealAllocationError(expense);
       addAudit("승인 차단", `${expense.title}: ${allocationError}`, user);
       alert(`${allocationError}. 금액을 확인해 주세요.`);
@@ -2079,7 +2055,7 @@ document.addEventListener("click", (event) => {
     }
     expense.approvalStatus = "승인 완료";
     expense.approver = user.name;
-    addAudit("식비 승인", `${expense.date} ${expense.title}: ${currency.format(effectiveExpenseAmount(expense))}, 최대 1인 ${currency.format(maximumExpenseShare(expense))}`, user);
+    addAudit("식비 승인", `${expense.date} ${expense.title}: 공통 식비 ${currency.format(effectiveExpenseAmount(expense))}, 최대 1인 ${currency.format(maximumExpenseShare(expense))}`, user);
     render();
     return;
   }
