@@ -1007,7 +1007,7 @@ function expenseNeedsApproval(expense) {
 
 function defaultApprovalStatus(expense) {
   if (expense.isExceptional) return "승인 대기";
-  if (settlementParticipants(expense).length === 0) return "보류";
+  if (settlementParticipants(expense).length === 0) return "승인 대기";
   if (hasInvalidSpecialMealAllocation(expense)) return "승인 대기";
   return expenseNeedsApproval(expense) ? "승인 대기" : "자동 처리";
 }
@@ -1426,7 +1426,7 @@ function normalizeState() {
     if (!expense.isExceptional) expense.specialMealAmounts = {};
     expense.exceptionNote = String(expense.exceptionNote || "");
     expense.approvalDecisionMade = Boolean(expense.approvalDecisionMade);
-    if (expense.isExceptional && expense.approvalStatus === "보류" && !expense.approvalDecisionMade) {
+    if (expense.approvalStatus === "보류" && !expense.approvalDecisionMade) {
       expense.approvalStatus = "승인 대기";
     }
     const knownPeople = new Set([...state.members, ...state.staff].map((person) => person.name));
