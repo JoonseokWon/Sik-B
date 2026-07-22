@@ -161,10 +161,6 @@ button.ghost {
   color: var(--ink);
 }
 
-button.approve-button {
-  background: var(--ok);
-}
-
 button.small {
   min-height: 32px;
   padding: 0 10px;
@@ -395,13 +391,20 @@ textarea {
 }
 
 .expense-summary {
-  grid-template-columns: minmax(260px, 1fr) 150px minmax(220px, 0.8fr) 72px 36px;
+  grid-template-columns: minmax(260px, 1fr) 150px minmax(220px, 0.8fr) 124px 36px;
 }
 
 .approval-action {
   display: grid;
   min-height: 38px;
   place-items: center;
+}
+
+.quick-approval-select {
+  min-height: 32px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .compact-summary strong {

@@ -1484,7 +1484,9 @@ function renderExpenses() {
         <div class="compact-money">${expense.isExceptional ? "공통 " : ""}${currency.format(commonAmount)}</div>
         <div class="compact-money">${specialMealCount ? `일반 1인 ${currency.format(share)}` : `1인 ${currency.format(share)}`}</div>
         <div class="approval-action">
-          ${canApproveExpense && needsApproval && status !== "승인 완료" ? `<button class="small approve-button" type="button" data-approve-expense="${expense.id}">승인</button>` : ""}
+          ${canApproveExpense ? `<select class="quick-approval-select" data-expense-field="approvalStatus" data-id="${expense.id}" aria-label="${escapeHtml(expense.title)} 빠른 승인 상태 변경" title="승인, 반려, 보류 등 상태 변경">
+            ${APPROVAL_STATES.map((item) => `<option value="${item}" ${status === item ? "selected" : ""}>${item}</option>`).join("")}
+          </select>` : ""}
         </div>
         <button class="remove" type="button" data-remove-expense="${expense.id}" aria-label="비용 삭제">x</button>
       </div>
@@ -1871,6 +1873,25 @@ document.addEventListener("change", (event) => {
         render();
         return;
       }
+      const user = currentUser();
+      expense.approvalStatus = target.value;
+      expense.approver = user.name;
+      refreshAutomaticApprovalStatuses();
+      const nextStatus = expense.approvalStatus;
+      const auditAction = {
+        "승인 완료": "식비 승인",
+        "반려": "식비 반려",
+        "보류": "식비 보류",
+        "승인 대기": "승인 대기 지정",
+        "자동 처리": "자동 처리 지정",
+      }[nextStatus] || "승인 상태 변경";
+      addAudit(
+        auditAction,
+        `${expense.date} ${expense.title}: ${previous || "미지정"} -> ${nextStatus}, 공통 식비 ${currency.format(effectiveExpenseAmount(expense))}, 최대 1인 ${currency.format(maximumExpenseShare(expense))}`,
+        user,
+      );
+      render();
+      return;
     } else if (!ensureEditPermission("비용 건 수정")) return;
     if (field === "amount") expense.amount = parseMoneyInput(target.value);
     else if (field === "isExceptional") {
@@ -2051,29 +2072,6 @@ document.addEventListener("click", (event) => {
     els.externalExcelInput.dataset.integrationType = target.dataset.integrationImport;
     els.externalExcelInput.value = "";
     els.externalExcelInput.click();
-    return;
-  }
-  if (target.dataset.approveExpense) {
-    const expense = state.expenses.find((item) => item.id === target.dataset.approveExpense);
-    if (!expense || !ensureApprovalPermission(`${expense?.title || "식비"} 승인`)) return;
-    const user = currentUser();
-    if (!hasAllPermissions(user)) {
-      addAudit("승인 차단", `${expense.title}: 입력, 승인, 감사 로그 열람 등 모든 권한을 가진 계정만 승인할 수 있습니다.`, user);
-      alert("입력, 승인, 감사 로그 열람 등 모든 권한을 가진 계정만 승인할 수 있습니다.");
-      render();
-      return;
-    }
-    if (hasInvalidSpecialMealAllocation(expense)) {
-      const allocationError = specialMealAllocationError(expense);
-      addAudit("승인 차단", `${expense.title}: ${allocationError}`, user);
-      alert(`${allocationError}. 금액을 확인해 주세요.`);
-      render();
-      return;
-    }
-    expense.approvalStatus = "승인 완료";
-    expense.approver = user.name;
-    addAudit("식비 승인", `${expense.date} ${expense.title}: 공통 식비 ${currency.format(effectiveExpenseAmount(expense))}, 최대 1인 ${currency.format(maximumExpenseShare(expense))}`, user);
-    render();
     return;
   }
   if (target.id === "resetButton") {
