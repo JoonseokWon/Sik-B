@@ -1429,12 +1429,10 @@ function normalizeState() {
     if (expense.approvalStatus === "보류" && !expense.approvalDecisionMade) {
       expense.approvalStatus = "승인 대기";
     }
-    const knownPeople = new Set([...state.members, ...state.staff].map((person) => person.name));
-    const hasUnknownParticipant = expense.participants.some((name) => !knownPeople.has(name));
     const hasCurrentMember = settlementMembers(expense.participants).length > 0;
-    if (hasUnknownParticipant && !hasCurrentMember && activityMembersByDate(expense.date).length) {
+    if (!hasCurrentMember && activityMembersByDate(expense.date).length) {
       applyExpenseRecommendation(expense);
-      expense.recommendationNote = "저장 데이터의 이전 그룹 인원을 제거하고 활동 기록/일정표 기준으로 자동 복구함";
+      expense.recommendationNote = "정산 대상이 없던 저장 건을 활동 기록/일정표 기준으로 자동 복구함";
     }
   });
   refreshAutomaticApprovalStatuses();
