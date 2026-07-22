@@ -779,13 +779,13 @@ function revenueWeight(member) {
 }
 
 function activityMembersByDate(date) {
-  const names = new Set();
-  state.attendance
+  const attendanceNames = state.attendance
     .filter((row) => row.date === date && row.status && row.status !== "제외")
-    .forEach((row) => names.add(row.member));
-  state.schedules
+    .map((row) => row.member);
+  const scheduleNames = state.schedules
     .filter((schedule) => schedule.date === date)
-    .forEach((schedule) => schedule.members.forEach((name) => names.add(name)));
+    .flatMap((schedule) => schedule.members);
+  const names = new Set([...attendanceNames, ...scheduleNames]);
   return [...names].filter((name) => personByName(name));
 }
 
@@ -815,7 +815,7 @@ function createExpense(date, title, amount, transactionTime = "12:00") {
     approver: "인사 마스터",
     approvalMemo: "",
     approvalDecisionMade: false,
-    recommendationNote: "더미 활동/일정 기준으로 생성됨",
+    recommendationNote: "출입 기록/그룹 일정표 기준으로 생성됨",
     isExceptional: false,
     specialMealAmounts: {},
     exceptionNote: "",
@@ -927,6 +927,8 @@ function effectiveExpenseAmount(expense) {
 function setExpenseExceptional(expense, enabled) {
   expense.isExceptional = enabled;
   if (!enabled) {
+    expense.skippedParticipants = [];
+    expense.separateMealParticipants = [];
     expense.specialMealAmounts = {};
     expense.exceptionNote = "";
   }
@@ -1175,7 +1177,7 @@ function syncExpenseRecommendation(expense) {
   const previous = expense.participants.join(", ");
   applyExpenseRecommendation(expense);
   const participants = expense.participants;
-  expense.recommendationNote = `활동 기록/일정표 기준 ${participants.length}명 적용`;
+  expense.recommendationNote = `출입 기록/그룹 일정표 기준 ${participants.length}명 적용`;
   addAudit("예상 식사인원 적용", `${expense.date} ${expense.title}: ${previous || "없음"} -> ${participants.join(", ") || "예상 없음"}`);
 }
 
@@ -1329,13 +1331,13 @@ function seedOtherIdolData() {
   state.attendance = [
     ["2026-07-16", "원준석", "출근"], ["2026-07-16", "장현우", "출근"], ["2026-07-16", "김진현", "출근"], ["2026-07-16", "이준영", "출근"],
     ["2026-07-18", "원준석", "외부일정"], ["2026-07-18", "장현우", "외부일정"], ["2026-07-18", "김진현", "외부일정"], ["2026-07-18", "이준영", "외부일정"],
-    ["2026-07-21", "장현우", "출근"], ["2026-07-21", "김진현", "출근"],
+    ["2026-07-21", "원준석", "출근"], ["2026-07-21", "장현우", "출근"], ["2026-07-21", "김진현", "출근"], ["2026-07-21", "이준영", "출근"],
     ["2026-07-25", "원준석", "외부일정"], ["2026-07-25", "장현우", "외부일정"], ["2026-07-25", "김진현", "외부일정"], ["2026-07-25", "이준영", "외부일정"],
   ].map(([date, member, status]) => ({ id: makeId(), date, member, status }));
   state.schedules = [
     { id: makeId(), date: "2026-07-16", title: "컴백 안무 합주", members: ["원준석", "장현우", "김진현", "이준영"] },
     { id: makeId(), date: "2026-07-18", title: "음악방송 리허설", members: ["원준석", "장현우", "김진현", "이준영"] },
-    { id: makeId(), date: "2026-07-21", title: "라디오 스페셜 DJ", members: ["장현우", "김진현"] },
+    { id: makeId(), date: "2026-07-21", title: "라디오 스페셜 DJ", members: ["원준석", "장현우", "김진현", "이준영"] },
     { id: makeId(), date: "2026-07-25", title: "팬미팅 무대 점검", members: ["원준석", "장현우", "김진현", "이준영"] },
   ];
   state.expenses = [
@@ -1432,7 +1434,7 @@ function normalizeState() {
     const hasCurrentMember = settlementMembers(expense.participants).length > 0;
     if (!hasCurrentMember && activityMembersByDate(expense.date).length) {
       applyExpenseRecommendation(expense);
-      expense.recommendationNote = "정산 대상이 없던 저장 건을 활동 기록/일정표 기준으로 자동 복구함";
+      expense.recommendationNote = "정산 대상이 없던 저장 건을 출입 기록/그룹 일정표 기준으로 자동 복구함";
     }
   });
   refreshAutomaticApprovalStatuses();
@@ -1591,7 +1593,7 @@ function renderExpenses() {
           <div class="meal-skip-options">
             ${expense.participants.filter((name) => !isSettlementExcluded(name)).map((name) => `
               <label>
-                <input type="checkbox" data-skip-expense="${expense.id}" data-member="${escapeHtml(name)}" ${expense.skippedParticipants.includes(name) ? "checked" : ""}>
+                <input type="checkbox" data-skip-expense="${expense.id}" data-member="${escapeHtml(name)}" ${expense.skippedParticipants.includes(name) ? "checked" : ""} ${expense.isExceptional ? "" : "disabled"}>
                 <span>${escapeHtml(name)}</span>
               </label>
             `).join("") || '<span class="cell-note">정산 대상 멤버가 없습니다.</span>'}
@@ -1602,7 +1604,7 @@ function renderExpenses() {
           <div class="meal-skip-options">
             ${expense.participants.filter((name) => !isSettlementExcluded(name)).map((name) => `
               <label>
-                <input type="checkbox" data-separate-expense="${expense.id}" data-member="${escapeHtml(name)}" ${expense.separateMealParticipants.includes(name) ? "checked" : ""}>
+                <input type="checkbox" data-separate-expense="${expense.id}" data-member="${escapeHtml(name)}" ${expense.separateMealParticipants.includes(name) ? "checked" : ""} ${expense.isExceptional ? "" : "disabled"}>
                 <span>${escapeHtml(name)}</span>
               </label>
             `).join("") || '<span class="cell-note">정산 대상 멤버가 없습니다.</span>'}
