@@ -79,8 +79,6 @@ const els = {
   totalRevenue: document.querySelector("#totalRevenue"),
   totalCommonRevenue: document.querySelector("#totalCommonRevenue"),
   companyShare: document.querySelector("#companyShare"),
-  rateTotal: document.querySelector("#rateTotal"),
-  totalGross: document.querySelector("#totalGross"),
   totalFood: document.querySelector("#totalFood"),
   totalMarketing: document.querySelector("#totalMarketing"),
   approvalCount: document.querySelector("#approvalCount"),
@@ -1730,14 +1728,10 @@ function renderTotals() {
     { revenue: 0, gross: 0, food: 0, marketing: 0, net: 0 },
   );
   const commonRevenue = commonRevenuePool();
-  const rateTotal = contractRateTotal();
   const approvalCount = state.expenses.filter((expense) => inPeriod(expense.date) && ["승인 대기", "보류"].includes(expenseStatus(expense))).length;
   els.totalCommonRevenue.textContent = currency.format(commonRevenue);
   els.companyShare.textContent = currency.format(companyShareAmount());
-  els.rateTotal.textContent = `${rateTotal}%`;
-  els.rateTotal.parentElement?.classList.toggle("warning-card", !hasValidContractRateTotal());
   els.totalRevenue.textContent = currency.format(totals.net);
-  els.totalGross.textContent = currency.format(totals.gross);
   els.totalFood.textContent = currency.format(totals.food);
   els.totalMarketing.textContent = currency.format(totals.marketing);
   els.approvalCount.textContent = `${approvalCount}건`;
