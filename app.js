@@ -105,6 +105,32 @@ function splitNames(value) {
     .filter(Boolean);
 }
 
+function parseMoneyInput(value) {
+  const digits = String(value ?? "").replace(/[^0-9]/g, "");
+  return digits ? Number(digits) : 0;
+}
+
+function formatMoneyInput(value) {
+  if (value == null || value === "") return "";
+  return Math.max(0, Number(value || 0)).toLocaleString("ko-KR");
+}
+
+function formatMoneyInputElement(input) {
+  const cursor = input.selectionStart ?? input.value.length;
+  const rawDigits = input.value.replace(/[^0-9]/g, "");
+  const digitsBeforeCursor = input.value.slice(0, cursor).replace(/[^0-9]/g, "").length;
+  const formatted = rawDigits ? formatMoneyInput(Number(rawDigits)) : "";
+  input.value = formatted;
+  if (typeof input.setSelectionRange !== "function") return;
+  let nextCursor = 0;
+  let seenDigits = 0;
+  while (nextCursor < formatted.length && seenDigits < digitsBeforeCursor) {
+    if (/\d/.test(formatted[nextCursor])) seenDigits += 1;
+    nextCursor += 1;
+  }
+  input.setSelectionRange(nextCursor, nextCursor);
+}
+
 function formatTime(date = new Date()) {
   const pad = (value) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -1447,7 +1473,6 @@ function renderExpenses() {
     const approvalReasonText = expenseApprovalReasons(expense).join(", ") || "승인 조건 해당 없음";
     const billableCount = billableParticipants(expense).length;
     const specialMealCount = specialMealAmountEntries(expense).length;
-    const regularCount = regularBillableParticipants(expense).length;
     const specialMealError = specialMealAllocationError(expense);
     const card = document.createElement("article");
     card.className = `compact-card ${needsApproval && status !== "승인 완료" ? "approval-card" : ""}`;
@@ -1469,7 +1494,7 @@ function renderExpenses() {
         <label>날짜<input type="date" value="${expense.date}" data-expense-field="date" data-id="${expense.id}" aria-label="날짜"></label>
         <label>결제 시간<input type="time" value="${expense.transactionTime}" data-expense-field="transactionTime" data-id="${expense.id}" aria-label="결제 시간"></label>
         <label>내역<input value="${escapeHtml(expense.title)}" data-expense-field="title" data-id="${expense.id}" aria-label="내역"></label>
-        <label>기본 식비<input type="number" min="0" step="100" value="${expense.amount}" data-expense-field="amount" data-id="${expense.id}" aria-label="기본 식비 금액"></label>
+        <label>기본 식비<input type="text" inputmode="numeric" value="${formatMoneyInput(expense.amount)}" data-money-input data-expense-field="amount" data-id="${expense.id}" aria-label="기본 식비 금액"></label>
         <label class="wide-field">예상 식사인원
         <div class="input-action-cell">
           <input value="${escapeHtml(expense.participants.join(", "))}" data-expense-field="participants" data-id="${expense.id}" aria-label="예상 식사인원">
@@ -1506,7 +1531,7 @@ function renderExpenses() {
             <span>샐러드, 식사 생략 등</span>
           </label>
           <label>특이 적용 총 식비
-            <input type="number" min="0" step="100" value="${expense.exceptionAmount ?? expense.amount}" data-expense-field="exceptionAmount" data-id="${expense.id}" aria-label="특이 적용 총 식비 금액" ${expense.isExceptional ? "required" : "disabled"}>
+            <input type="text" inputmode="numeric" value="${formatMoneyInput(expense.exceptionAmount ?? expense.amount)}" data-money-input data-expense-field="exceptionAmount" data-id="${expense.id}" aria-label="특이 적용 총 식비 금액" ${expense.isExceptional ? "required" : "disabled"}>
           </label>
         </div>
         <div class="special-meal-field">
@@ -1517,7 +1542,7 @@ function renderExpenses() {
               return `
                 <label>
                   <span>${escapeHtml(name)}</span>
-                  <input type="number" min="0" step="100" value="${hasAmount ? expense.specialMealAmounts[name] : ""}" placeholder="미입력 시 N빵" data-special-meal-amount="${expense.id}" data-member="${escapeHtml(name)}" aria-label="${escapeHtml(name)} 특이 개별 식비" ${expense.isExceptional ? "" : "disabled"}>
+                  <input type="text" inputmode="numeric" value="${hasAmount ? formatMoneyInput(expense.specialMealAmounts[name]) : ""}" data-money-input data-special-meal-amount="${expense.id}" data-member="${escapeHtml(name)}" aria-label="${escapeHtml(name)} 특이 개별 식비" ${expense.isExceptional ? "" : "disabled"}>
                 </label>
               `;
             }).join("") || '<span class="cell-note">정산 대상 멤버가 없습니다.</span>'}
@@ -1532,7 +1557,6 @@ function renderExpenses() {
           ${APPROVAL_STATES.map((item) => `<option value="${item}" ${status === item ? "selected" : ""}>${item}</option>`).join("")}
         </select></label>
         <label>승인권자<input value="${escapeHtml(expense.approver)}" data-expense-field="approver" data-id="${expense.id}" aria-label="승인권자" disabled></label>
-        <div class="compact-formula">배분 방식: 특이 개별 ${specialMealCount}명, 나머지 균등 배분 ${regularCount}명</div>
       </div>
     `;
     els.expenseRows.appendChild(card);
@@ -1779,6 +1803,7 @@ document.addEventListener("submit", async (event) => {
 
 document.addEventListener("input", (event) => {
   const target = event.target;
+  if (target.matches?.("[data-money-input]")) formatMoneyInputElement(target);
   if ([els.groupName, els.periodStart, els.periodEnd, els.approvalLimit, els.concurrentApprovalCount, els.companyRate].includes(target)) {
     const allowed = target === els.companyRate
       ? ensureGeneralEditPermission("회사 지급률 수정")
@@ -1856,8 +1881,8 @@ document.addEventListener("change", (event) => {
         return;
       }
     } else if (!ensureEditPermission("비용 건 수정")) return;
-    if (field === "amount") expense.amount = Math.max(0, Number(target.value || 0));
-    else if (field === "exceptionAmount") expense.exceptionAmount = Math.max(0, Number(target.value || 0));
+    if (field === "amount") expense.amount = parseMoneyInput(target.value);
+    else if (field === "exceptionAmount") expense.exceptionAmount = parseMoneyInput(target.value);
     else if (field === "isExceptional") {
       setExpenseExceptional(expense, target.checked);
     } else if (field === "participants") {
@@ -1894,7 +1919,7 @@ document.addEventListener("change", (event) => {
     const previous = expense.specialMealAmounts?.[memberName];
     expense.specialMealAmounts = expense.specialMealAmounts && typeof expense.specialMealAmounts === "object" ? expense.specialMealAmounts : {};
     if (target.value === "") delete expense.specialMealAmounts[memberName];
-    else expense.specialMealAmounts[memberName] = Math.max(0, Number(target.value || 0));
+    else expense.specialMealAmounts[memberName] = parseMoneyInput(target.value);
     expense.approvalStatus = defaultApprovalStatus(expense);
     addAudit(
       "특이 개별 식비 수정",

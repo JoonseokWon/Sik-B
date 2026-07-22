@@ -427,6 +427,14 @@ textarea {
 
 .expense-edit {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  align-items: start;
+}
+
+.expense-edit > label input,
+.expense-edit > label select,
+.exception-controls label > input:not([type="checkbox"]) {
+  min-height: 34px;
+  padding: 6px 8px;
 }
 
 .meal-skip-field {
@@ -478,6 +486,7 @@ textarea {
   grid-column: span 2;
   grid-template-columns: minmax(150px, 0.8fr) minmax(180px, 1fr);
   gap: 10px;
+  align-items: start;
 }
 
 .special-meal-field {
@@ -502,6 +511,11 @@ textarea {
 .special-meal-options label {
   grid-template-columns: minmax(50px, auto) minmax(90px, 1fr);
   align-items: center;
+}
+
+.special-meal-options input {
+  min-height: 38px;
+  padding: 8px 10px;
 }
 
 .exception-check input {
@@ -530,17 +544,6 @@ textarea {
 .expense-edit .wide-field {
   min-width: 0;
   grid-column: span 2;
-}
-
-.compact-formula {
-  align-self: end;
-  min-height: 38px;
-  padding: 9px 10px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: #fff;
-  color: var(--muted);
-  font-size: 13px;
 }
 
 .approval-card {
